@@ -19,6 +19,8 @@ function agruparBultosPorSlot(bultos = []) {
 export default function RackVista({
   sucursal,
   bultosCandidatos = [],
+  todosLosBultos = [],
+  sucursales = [],
   onAcomodar,
   acomodando = false,
 }) {
@@ -112,7 +114,10 @@ export default function RackVista({
           nivel={slotActivo.nivel}
           columna={slotActivo.columna}
           bultosEnSlot={bultosEnSlotActivo}
+          bultosEnRack={bultos}
           bultosCandidatos={bultosCandidatos}
+          todosLosBultos={todosLosBultos}
+          sucursales={sucursales}
           sucursalId={sucursal.id}
           onAcomodar={onAcomodar}
           ocupado={acomodando}
