@@ -63,6 +63,14 @@ model Bulto {
   piezas        Int
   pesoKg        Float
   volumenM3     Float
+  /// Altura del bulto en metros (para validar contra altura útil de tarima).
+  altoM         Float?
+  /// Posición en rack: nivel 1 (piso) a 4. Null = aún no acomodado.
+  nivel         Int?
+  /// Posición en rack: columna 1 (cerca salida) a 8. Null = aún no acomodado.
+  columna       Int?
+  /// Demanda de embarque: "alta" | "media" | "baja" (define zona sugerida A/B/C).
+  demandaEmbarque String     @default("media")
   estado        String       @default("PENDIENTE_RECIBO")
   motivoRechazo String?
   embarqueId    String?

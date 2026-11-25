@@ -5,7 +5,8 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Iniciando seed de base de datos CEDIS Catlovers...");
 
-  // 1. Crear las 32 sucursales (1 rack por sucursal: 4 niveles x 8 tarimas = 32 tarimas)
+  // 1. 32 sucursales / racks (1 rack por tienda destino):
+  //    cerca 9–16 | media 1–8 y 17–23 | lejos 24–32. Cada rack: 4×8 tarimas.
   const nombresSucursales = [
     "Centro Histórico", "Norte Industrial", "Sur Periférico", "Poniente Santa Fe",
     "Oriente Aeropuerto", "Valle Dorado", "Satélite", "Interlomas",
@@ -90,7 +91,7 @@ async function main() {
         estado: "EN_RECIBO",
         bultos: {
           create: [
-            // 11 tarimas/bultos consolidados ya en RACK-01 (10,100 kg y 24.5 m3 -> ~84.1% peso y ~85.7% volumen)
+            // Demo Tortón ~85%: bulto ya acomodado en RACK-01 zona A (alta demanda).
             {
               idBulto: "BUL-8841-01",
               idOc: "OC-2026-001",
@@ -101,9 +102,13 @@ async function main() {
               piezas: 100,
               pesoKg: 10100,
               volumenM3: 24.5,
+              altoM: 1.5,
+              nivel: 1,
+              columna: 1,
+              demandaEmbarque: "alta",
               estado: "EN_RACK",
             },
-            // Bulto pendiente de escanear en andén que sube a RACK-01 por encima del 90% (suma +950 kg = 11,050 kg [92.1%] y +2.1 m3 = 26.6 m3 [93.0%])
+            // Pendiente de recibo → aún sin posición en rack.
             {
               idBulto: "BUL-8841-02",
               idOc: "OC-2026-001",
@@ -114,9 +119,10 @@ async function main() {
               piezas: 40,
               pesoKg: 950,
               volumenM3: 2.1,
+              altoM: 1.2,
+              demandaEmbarque: "alta",
               estado: "PENDIENTE_RECIBO",
             },
-            // Bulto para Sucursal 02 pendiente de recibo
             {
               idBulto: "BUL-8841-03",
               idOc: "OC-2026-001",
@@ -127,6 +133,8 @@ async function main() {
               piezas: 50,
               pesoKg: 420,
               volumenM3: 1.8,
+              altoM: 0.9,
+              demandaEmbarque: "media",
               estado: "PENDIENTE_RECIBO",
             },
           ],
@@ -135,7 +143,27 @@ async function main() {
     });
   }
 
-  console.log("Seed completado: 32 Sucursales/Racks, 3 OCs y Bultos de prueba creados.");
+  // Si la cita demo ya existía, asegramos posición en el bulto EN_RACK.
+  await prisma.bulto.updateMany({
+    where: { idBulto: "BUL-8841-01" },
+    data: {
+      altoM: 1.5,
+      nivel: 1,
+      columna: 1,
+      demandaEmbarque: "alta",
+      estado: "EN_RACK",
+    },
+  });
+  await prisma.bulto.updateMany({
+    where: { idBulto: "BUL-8841-02" },
+    data: { altoM: 1.2, demandaEmbarque: "alta" },
+  });
+  await prisma.bulto.updateMany({
+    where: { idBulto: "BUL-8841-03" },
+    data: { altoM: 0.9, demandaEmbarque: "media" },
+  });
+
+  console.log("Seed completado: 32 Sucursales/Racks, 3 OCs y Bultos con posición de rack.");
 }
 
 main()

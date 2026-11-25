@@ -1,5 +1,46 @@
 import { NextResponse } from "next/server";
 import { prisma, CEDIS_RULES } from "@/lib/prisma";
+import {
+  RACK_NIVELES,
+  RACK_COLUMNAS,
+  TARIMA_PESO_MAX_KG,
+  TARIMA_VOLUMEN_UTIL_M3,
+  TARIMA_ALTURA_UTIL_M,
+  TARIMA_ALTURA_BASE_M,
+  ZONA_INFO,
+  listarPosicionesRack,
+  zonaPorColumna,
+} from "@/app/embarques/rackRules";
+import { evaluarAcomodoEnSlot } from "@/app/embarques/rackCapacity";
+import {
+  PROXIMIDAD_INFO,
+  listarModulosDobles,
+  RACKS_CERCA,
+  RACKS_MEDIA,
+  RACKS_LEJOS,
+} from "@/app/embarques/cedisLayout";
+
+function metaRack() {
+  return {
+    niveles: RACK_NIVELES,
+    columnas: RACK_COLUMNAS,
+    tarima: {
+      pesoMaxKg: TARIMA_PESO_MAX_KG,
+      volumenUtilM3: TARIMA_VOLUMEN_UTIL_M3,
+      alturaUtilM: TARIMA_ALTURA_UTIL_M,
+      alturaBaseM: TARIMA_ALTURA_BASE_M,
+    },
+    zonas: ZONA_INFO,
+    posiciones: listarPosicionesRack(),
+    planoCedis: {
+      proximidad: PROXIMIDAD_INFO,
+      racksCerca: RACKS_CERCA,
+      racksMedia: RACKS_MEDIA,
+      racksLejos: RACKS_LEJOS,
+      modulosDobles: listarModulosDobles(),
+    },
+  };
+}
 
 // GET /api/cedis -> Obtiene estado general (OCs, Citas/Facturas, Sucursales con Bultos en Rack y Embarques)
 export async function GET() {
@@ -31,6 +72,7 @@ export async function GET() {
 
     return NextResponse.json({
       rules: CEDIS_RULES,
+      rack: metaRack(),
       sucursales,
       ordenesCompra,
       citasFacturas,
@@ -189,6 +231,124 @@ export async function POST(request) {
         rechazado: false,
         bulto: bultoActualizado,
         mensaje: `Bulto ${idBulto} validado correctamente. Ubicar en ${bultoActualizado.sucursal.rackAsignado} (${bultoActualizado.sucursal.nombre}).`,
+      });
+    }
+
+    // MOMENTO 4 (acomodo): asignar bultos a una tarima del rack (nivel + columna)
+    if (action === "ACOMODAR_BULTOS") {
+      const { sucursalId, nivel, columna, idBultos, soloVerificar } = body;
+      const nivelN = Number(nivel);
+      const columnaN = Number(columna);
+      const ids = Array.isArray(idBultos) ? idBultos : [];
+
+      if (!sucursalId || ids.length === 0) {
+        return NextResponse.json(
+          { error: "Faltan sucursalId o idBultos para acomodar." },
+          { status: 400 }
+        );
+      }
+      if (nivelN < 1 || nivelN > RACK_NIVELES || columnaN < 1 || columnaN > RACK_COLUMNAS) {
+        return NextResponse.json(
+          {
+            error: `Posición inválida. Nivel 1–${RACK_NIVELES}, columna 1–${RACK_COLUMNAS}.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const bultosAAcomodar = await prisma.bulto.findMany({
+        where: { idBulto: { in: ids } },
+      });
+
+      if (bultosAAcomodar.length !== ids.length) {
+        return NextResponse.json(
+          { error: "Uno o más bultos no existen en la base de datos." },
+          { status: 404 }
+        );
+      }
+
+      const deOtraSucursal = bultosAAcomodar.find((b) => b.sucursalId !== Number(sucursalId));
+      if (deOtraSucursal) {
+        return NextResponse.json(
+          {
+            error: `El bulto ${deOtraSucursal.idBulto} pertenece a otra sucursal/rack.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const noAcomodables = bultosAAcomodar.filter(
+        (b) => b.estado === "EMBARCADO" || b.estado === "RECHAZADO"
+      );
+      if (noAcomodables.length > 0) {
+        return NextResponse.json(
+          {
+            error: `No se pueden acomodar bultos en estado ${noAcomodables[0].estado}.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const bultosYaEnSlot = await prisma.bulto.findMany({
+        where: {
+          sucursalId: Number(sucursalId),
+          estado: "EN_RACK",
+          nivel: nivelN,
+          columna: columnaN,
+          idBulto: { notIn: ids },
+        },
+      });
+
+      const evaluacion = evaluarAcomodoEnSlot({ bultosAAcomodar, bultosYaEnSlot });
+      const zona = zonaPorColumna(columnaN);
+
+      if (!evaluacion.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            cabe: false,
+            motivo: evaluacion.motivo,
+            zona,
+            posicion: { nivel: nivelN, columna: columnaN },
+          },
+          { status: 400 }
+        );
+      }
+
+      if (soloVerificar) {
+        return NextResponse.json({
+          ok: true,
+          cabe: true,
+          zona,
+          posicion: { nivel: nivelN, columna: columnaN },
+          resumen: evaluacion.resumen,
+          mensaje: `Caben en N${nivelN}-C${columnaN} (zona ${zona}).`,
+        });
+      }
+
+      await prisma.bulto.updateMany({
+        where: { idBulto: { in: ids } },
+        data: {
+          estado: "EN_RACK",
+          nivel: nivelN,
+          columna: columnaN,
+          motivoRechazo: null,
+        },
+      });
+
+      const bultosActualizados = await prisma.bulto.findMany({
+        where: { idBulto: { in: ids } },
+        include: { sucursal: true },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        cabe: true,
+        zona,
+        posicion: { nivel: nivelN, columna: columnaN },
+        resumen: evaluacion.resumen,
+        bultos: bultosActualizados,
+        mensaje: `Acomodados ${bultosActualizados.length} bulto(s) en N${nivelN}-C${columnaN} (zona ${zona}).`,
       });
     }
 
