@@ -1,16 +1,27 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// POST /proveedor/api/oc -> Crea una nueva Orden de Compra simulando el ERP del CEDIS
+// POST /proveedor/api/oc -> Crea una nueva Orden de Compra relacionada con idProveedor
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { proveedor, lineas } = body;
+    const { idProveedor, lineas } = body;
 
-    if (!proveedor || !Array.isArray(lineas) || lineas.length === 0) {
+    if (!idProveedor || !Array.isArray(lineas) || lineas.length === 0) {
       return NextResponse.json(
-        { error: "Debe indicar el proveedor y al menos una línea de producto para la Orden de Compra." },
+        { error: "Debe indicar el idProveedor y al menos una línea de producto para la Orden de Compra." },
         { status: 400 }
+      );
+    }
+
+    const proveedorDB = await prisma.proveedor.findUnique({
+      where: { idProveedor: Number(idProveedor) },
+    });
+
+    if (!proveedorDB) {
+      return NextResponse.json(
+        { error: `El proveedor con idProveedor=${idProveedor} no existe.` },
+        { status: 404 }
       );
     }
 
@@ -34,7 +45,7 @@ export async function POST(request) {
     const nuevaOc = await prisma.ordenCompra.create({
       data: {
         idOc: nuevoIdOc,
-        proveedor: proveedor.trim(),
+        idProveedor: Number(idProveedor),
         estado: "PENDIENTE",
         lineas: {
           create: lineas.map((l) => ({
@@ -48,10 +59,23 @@ export async function POST(request) {
       include: {
         lineas: true,
         citaFactura: true,
+        proveedorRel: {
+          select: {
+            idProveedor: true,
+            nombre: true,
+            correo: true,
+          },
+        },
       },
     });
 
-    return NextResponse.json({ ok: true, ordenCompra: nuevaOc });
+    return NextResponse.json({
+      ok: true,
+      ordenCompra: {
+        ...nuevaOc,
+        proveedor: nuevaOc.proveedorRel?.nombre || proveedorDB.nombre,
+      },
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

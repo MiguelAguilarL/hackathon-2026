@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma, CEDIS_RULES } from "@/lib/prisma";
 
-// GET /api/cedis -> Obtiene estado general (OCs, Citas/Facturas, Sucursales con Bultos en Rack y Embarques)
+// GET /api/cedis -> Obtiene estado general (OCs con relación a Proveedor, Citas/Facturas, Sucursales con Bultos en Rack y Embarques)
 export async function GET() {
   try {
-    const [sucursales, ordenesCompra, citasFacturas, bultos, embarques] = await Promise.all([
+    const [sucursales, proveedores, ordenesCompraRaw, citasFacturas, bultos, embarques] = await Promise.all([
       prisma.sucursal.findMany({
         orderBy: { id: "asc" },
         include: {
@@ -13,8 +13,26 @@ export async function GET() {
           },
         },
       }),
+      prisma.proveedor.findMany({
+        orderBy: { idProveedor: "asc" },
+        select: {
+          idProveedor: true,
+          nombre: true,
+          correo: true,
+        },
+      }),
       prisma.ordenCompra.findMany({
-        include: { lineas: true, citaFactura: true },
+        include: {
+          lineas: true,
+          citaFactura: true,
+          proveedorRel: {
+            select: {
+              idProveedor: true,
+              nombre: true,
+              correo: true,
+            },
+          },
+        },
       }),
       prisma.citaFactura.findMany({
         include: { bultos: true },
@@ -29,9 +47,16 @@ export async function GET() {
       }),
     ]);
 
+    // Mapear ordenesCompra incluyendo el nombre del proveedor desde proveedorRel para compatibilidad completa
+    const ordenesCompra = ordenesCompraRaw.map((oc) => ({
+      ...oc,
+      proveedor: oc.proveedorRel?.nombre || `Proveedor #${oc.idProveedor}`,
+    }));
+
     return NextResponse.json({
       rules: CEDIS_RULES,
       sucursales,
+      proveedores,
       ordenesCompra,
       citasFacturas,
       bultos,
@@ -90,11 +115,18 @@ export async function POST(request) {
         );
       }
 
+      // Resolver el nombre oficial del proveedor desde la OC si está disponible
+      const ocDB = await prisma.ordenCompra.findUnique({
+        where: { idOc },
+        include: { proveedorRel: true },
+      });
+      const nombreProveedorOficial = ocDB?.proveedorRel?.nombre || proveedor || "Proveedor Externo";
+
       const nuevaCita = await prisma.citaFactura.create({
         data: {
           idOc,
           folioFactura,
-          proveedor,
+          proveedor: nombreProveedorOficial,
           anden: Number(anden),
           fecha,
           horaInicio: Number(horaInicio),
@@ -103,7 +135,7 @@ export async function POST(request) {
             create: (bultos || []).map((b, idx) => ({
               idBulto: b.idBulto || `BUL-${folioFactura}-${String(idx + 1).padStart(2, "0")}`,
               idOc,
-              proveedor,
+              proveedor: nombreProveedorOficial,
               sucursalId: Number(b.sucursalId),
               sku: b.sku,
               descripcion: b.descripcion || b.sku,
@@ -123,7 +155,6 @@ export async function POST(request) {
     if (action === "ESCANEAR_BULTO") {
       const { idBulto, idOc, sku, piezas, sucursalId } = body;
 
-      // Buscar la OC y sus líneas solicitadas
       const oc = await prisma.ordenCompra.findUnique({
         where: { idOc },
         include: { lineas: true, bultos: true },
@@ -141,7 +172,6 @@ export async function POST(request) {
       );
 
       if (!lineaSolicitada) {
-        // Rechazo por SKU no solicitado
         if (idBulto) {
           await prisma.bulto.updateMany({
             where: { idBulto },
@@ -155,7 +185,6 @@ export async function POST(request) {
         });
       }
 
-      // Verificar si las piezas ya recibidas en rack + piezas del bulto exceden lo pedido en la OC
       const piezasYaRecibidas = oc.bultos
         .filter((b) => b.sku === sku && b.sucursalId === Number(sucursalId) && b.estado === "EN_RACK" && b.idBulto !== idBulto)
         .reduce((acc, b) => acc + b.piezas, 0);
@@ -177,7 +206,6 @@ export async function POST(request) {
         });
       }
 
-      // Si pasa la validación, se marca EN_RACK y se asigna al rack de la sucursal
       const bultoActualizado = await prisma.bulto.update({
         where: { idBulto },
         data: { estado: "EN_RACK", motivoRechazo: null },

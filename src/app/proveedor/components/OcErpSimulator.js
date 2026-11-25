@@ -2,51 +2,33 @@
 
 import { useState } from "react";
 
-const PLANTILLAS_PROVEEDORES = [
-  {
-    proveedor: "Corporativo Industrial Automotriz S.A. de C.V.",
-    lineas: [
-      { sku: "SKU-LUB-20W50", descripcion: "Caja Lubricante Multigrado 20W50 (12x946ml)", sucursalId: 1, piezasPedidas: 150 },
-      { sku: "SKU-BAL-DEL", descripcion: "Juego Balatas Cerámicas Delanteras", sucursalId: 2, piezasPedidas: 80 },
-      { sku: "SKU-ACU-AGM", descripcion: "Acumulador Alta Capacidad AGM 12V", sucursalId: 5, piezasPedidas: 40 },
-    ],
-  },
-  {
-    proveedor: "Grupo Alimenticio del Centro S.A. de C.V.",
-    lineas: [
-      { sku: "SKU-CER-500G", descripcion: "Caja Cereal Integral 500g (24 paquetes)", sucursalId: 1, piezasPedidas: 180 },
-      { sku: "SKU-LEC-UHT", descripcion: "Tarima Leche Entera UHT 1L (12 pack)", sucursalId: 4, piezasPedidas: 240 },
-    ],
-  },
-  {
-    proveedor: "Suministros Eléctricos y Ferreteros del Norte S.A.",
-    lineas: [
-      { sku: "SKU-CAB-THW12", descripcion: "Carrete Cable Cobre THW Calibre 12 (100m)", sucursalId: 1, piezasPedidas: 120 },
-      { sku: "SKU-INT-TERM", descripcion: "Interruptor Termomagnético Industrial 2x30A", sucursalId: 6, piezasPedidas: 90 },
-      { sku: "SKU-LUM-LED50", descripcion: "Luminaria Industrial UFO LED 150W", sucursalId: 3, piezasPedidas: 60 },
-    ],
-  },
-  {
-    proveedor: "Química y Limpieza Institucional S.A. de C.V.",
-    lineas: [
-      { sku: "SKU-DET-IND20", descripcion: "Bidón Detergente Biodegradable Industrial 20L", sucursalId: 1, piezasPedidas: 100 },
-      { sku: "SKU-PAP-JUMBO", descripcion: "Caja Bobina Papel Higiénico Jumbo (6 rollos)", sucursalId: 7, piezasPedidas: 160 },
-    ],
-  },
+const PLANTILLAS_LINEAS = [
+  [
+    { sku: "SKU-LUB-20W50", descripcion: "Caja Lubricante Multigrado 20W50 (12x946ml)", sucursalId: 1, piezasPedidas: 150 },
+    { sku: "SKU-BAL-DEL", descripcion: "Juego Balatas Cerámicas Delanteras", sucursalId: 2, piezasPedidas: 80 },
+    { sku: "SKU-ACU-AGM", descripcion: "Acumulador Alta Capacidad AGM 12V", sucursalId: 5, piezasPedidas: 40 },
+  ],
+  [
+    { sku: "SKU-CER-500G", descripcion: "Caja Cereal Integral 500g (24 paquetes)", sucursalId: 1, piezasPedidas: 180 },
+    { sku: "SKU-LEC-UHT", descripcion: "Tarima Leche Entera UHT 1L (12 pack)", sucursalId: 4, piezasPedidas: 240 },
+  ],
+  [
+    { sku: "SKU-CAB-THW12", descripcion: "Carrete Cable Cobre THW Calibre 12 (100m)", sucursalId: 1, piezasPedidas: 120 },
+    { sku: "SKU-INT-TERM", descripcion: "Interruptor Termomagnético Industrial 2x30A", sucursalId: 6, piezasPedidas: 90 },
+  ],
 ];
 
 export default function OcErpSimulator({
+  proveedorActivo,
   ordenesCompra = [],
   sucursales = [],
   onOcCreada,
 }) {
-  const [proveedor, setProveedor] = useState(PLANTILLAS_PROVEEDORES[0].proveedor);
-  const [lineas, setLineas] = useState(PLANTILLAS_PROVEEDORES[0].lineas);
+  const [lineas, setLineas] = useState(PLANTILLAS_LINEAS[0]);
   const [indicePlantilla, setIndicePlantilla] = useState(0);
   const [creando, setCreando] = useState(false);
   const [error, setError] = useState(null);
 
-  // Calcula cuál será el próximo folio consecutivo oficial de OC del CEDIS
   const calcularSiguienteFolioOc = () => {
     let maxNum = 0;
     for (const oc of ordenesCompra) {
@@ -60,10 +42,9 @@ export default function OcErpSimulator({
   };
 
   const cargarSiguientePlantilla = () => {
-    const nextIdx = (indicePlantilla + 1) % PLANTILLAS_PROVEEDORES.length;
+    const nextIdx = (indicePlantilla + 1) % PLANTILLAS_LINEAS.length;
     setIndicePlantilla(nextIdx);
-    setProveedor(PLANTILLAS_PROVEEDORES[nextIdx].proveedor);
-    setLineas(PLANTILLAS_PROVEEDORES[nextIdx].lineas);
+    setLineas(PLANTILLAS_LINEAS[nextIdx]);
   };
 
   const agregarLinea = () => {
@@ -91,13 +72,17 @@ export default function OcErpSimulator({
 
   const handleEmitirOc = async (e) => {
     e.preventDefault();
+    if (!proveedorActivo?.idProveedor) return;
     setError(null);
     setCreando(true);
     try {
       const res = await fetch("/proveedor/api/oc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proveedor, lineas }),
+        body: JSON.stringify({
+          idProveedor: proveedorActivo.idProveedor,
+          lineas,
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -117,13 +102,13 @@ export default function OcErpSimulator({
       <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-[11px] font-black uppercase tracking-wider bg-blue-400 text-slate-950 px-2.5 py-0.5 rounded">
-            Simulador ERP Compras CEDIS · Emisión de Órdenes de Compra (OC)
+            Simulador ERP Compras CEDIS · Emisión de OC para idProveedor #{proveedorActivo?.idProveedor}
           </span>
           <h2 className="text-lg font-bold mt-1">
-            Generador Oficial de Órdenes de Compra hacia Proveedores
+            Generar Nueva Orden de Compra para {proveedorActivo?.nombre}
           </h2>
           <p className="text-xs text-slate-400">
-            Simula el área de Compras del CEDIS emitiendo una nueva OC para abastecer a las 32 sucursales. Al emitirla, se selecciona automáticamente en el portal del proveedor con su folio de factura fiscal autogenerado.
+            Simula que el CEDIS emite una nueva Orden de Compra adjudicada a tu cuenta de proveedor (<code className="text-amber-400">idProveedor: {proveedorActivo?.idProveedor}</code>).
           </p>
         </div>
 
@@ -132,7 +117,7 @@ export default function OcErpSimulator({
           onClick={cargarSiguientePlantilla}
           className="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 font-extrabold text-xs px-4 py-2 rounded-xl transition"
         >
-          ⚡ Cargar Plantilla de Reabasto Realista
+          ⚡ Rotar Plantilla de Productos
         </button>
       </div>
 
@@ -146,7 +131,7 @@ export default function OcErpSimulator({
         <div className="grid md:grid-cols-3 gap-4">
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
             <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-              Folio Oficial OC (Autogenerado por ERP CEDIS · Solo Lectura)
+              Folio Oficial OC (Autogenerado · Solo Lectura)
             </label>
             <input
               type="text"
@@ -155,24 +140,22 @@ export default function OcErpSimulator({
               className="w-full bg-slate-200/80 border border-slate-300 text-slate-800 rounded-lg px-3 py-2 text-sm font-mono font-black cursor-not-allowed select-none"
             />
             <span className="text-[10px] text-emerald-700 font-bold block mt-1">
-              🔒 Consecutivo único institucional garantizado
+              🔒 Consecutivo único en base de datos
             </span>
           </div>
 
           <div className="md:col-span-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
             <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-              Razón Social del Proveedor Adjudicado
+              Proveedor Adjudicado (Relación Foreign Key idProveedor)
             </label>
             <input
               type="text"
-              required
-              value={proveedor}
-              onChange={(e) => setProveedor(e.target.value)}
-              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900"
-              placeholder="Nombre o Razón Social del Proveedor"
+              readOnly
+              value={`[idProveedor: #${proveedorActivo?.idProveedor}] ${proveedorActivo?.nombre} (${proveedorActivo?.correo})`}
+              className="w-full bg-slate-200/80 border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 cursor-not-allowed select-none"
             />
             <span className="text-[10px] text-slate-500 block mt-1">
-              El folio fiscal de la factura se generará automáticamente con el prefijo fiscal de esta razón social.
+              La Orden de Compra quedará ligada mediante <code className="font-mono font-bold">idProveedor = {proveedorActivo?.idProveedor}</code> en la tabla <code className="font-mono font-bold">OrdenCompra</code>.
             </span>
           </div>
         </div>
@@ -184,9 +167,6 @@ export default function OcErpSimulator({
               <h3 className="text-xs font-extrabold uppercase text-slate-700">
                 Partidas / Líneas Solicitadas por el CEDIS ({lineas.length})
               </h3>
-              <p className="text-[11px] text-slate-500">
-                Define qué SKUs, cuántas piezas y para qué sucursal destino solicita la empresa en esta Orden de Compra.
-              </p>
             </div>
             <button
               type="button"
@@ -277,14 +257,14 @@ export default function OcErpSimulator({
 
         <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-200">
           <span className="text-xs text-slate-500">
-            Al emitir la OC, se guardará en SQLite y podrás agendar su cita y factura inmediatamente.
+            Al emitir la OC, aparecerá inmediatamente en la lista exclusiva de tu proveedor.
           </span>
           <button
             type="submit"
             disabled={creando}
             className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow transition"
           >
-            {creando ? "Emitiendo OC en ERP..." : `Emitir Orden de Compra ${proximoFolioOc} y Pasar a Agendamiento →`}
+            {creando ? "Emitiendo OC..." : `Emitir Orden de Compra ${proximoFolioOc} para ${proveedorActivo?.nombre} →`}
           </button>
         </div>
       </form>

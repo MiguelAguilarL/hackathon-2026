@@ -6,10 +6,10 @@ import DockCalendar from "./components/DockCalendar";
 import PackingListBuilder from "./components/PackingListBuilder";
 import QrLabelsSheet from "./components/QrLabelsSheet";
 import OcErpSimulator from "./components/OcErpSimulator";
+import ProveedorLogin from "./components/ProveedorLogin";
 
 const PALABRAS_IGNORADAS = ["DE", "DEL", "LA", "LAS", "LOS", "EL", "Y", "E", "SA", "S.A.", "CV", "C.V.", "S.A"];
 
-// Extrae un prefijo fiscal de 3 letras a partir de la razón social del proveedor (ej. "Alimentos y Bebidas Nacionales" -> "ABN")
 function obtenerPrefijoFiscalProveedor(nombreProveedor = "PROVEEDOR GENERAL") {
   const palabras = nombreProveedor
     .toUpperCase()
@@ -29,12 +29,9 @@ function obtenerPrefijoFiscalProveedor(nombreProveedor = "PROVEEDOR GENERAL") {
   return "PRV";
 }
 
-// Genera automáticamente un Folio Fiscal de Factura (CFDI) único e irrepetible siguiendo formato real:
-// Formato oficial: CFDI-[PREFIJO_PROVEEDOR]-2026-[CONSECUTIVO_4_DIGITOS] (ej. CFDI-ABN-2026-0002)
 function generarFolioFacturaRealUnico(oc, citasFacturas = []) {
   if (!oc) return "CFDI-PRV-2026-0001";
 
-  // Si la OC ya tiene una factura registrada, mostrar su folio oficial asignado
   if (oc.citaFactura?.folioFactura) {
     return oc.citaFactura.folioFactura;
   }
@@ -46,7 +43,6 @@ function generarFolioFacturaRealUnico(oc, citasFacturas = []) {
   const foliosOcupados = new Set(citasFacturas.map((c) => c.folioFactura.toUpperCase()));
   let candidato = `CFDI-${prefijo}-2026-${String(consecutivo).padStart(4, "0")}`;
 
-  // Garantizar que jamás se repita ningún folio existente en la base de datos
   while (foliosOcupados.has(candidato.toUpperCase())) {
     consecutivo += 1;
     candidato = `CFDI-${prefijo}-2026-${String(consecutivo).padStart(4, "0")}`;
@@ -56,44 +52,35 @@ function generarFolioFacturaRealUnico(oc, citasFacturas = []) {
 }
 
 export default function ProveedorPage() {
+  const [proveedorActivo, setProveedorActivo] = useState(null);
+  const [verificandoSesion, setVerificandoSesion] = useState(true);
+
   const [data, setData] = useState(null);
   const [vistaActiva, setVistaActiva] = useState("AGENDAR"); // "AGENDAR" | "SIMULADOR_OC" | "ETIQUETAS" | "CITAS"
 
   // Estado del formulario de Momentos 1 y 2
-  const [idOc, setIdOc] = useState("OC-2026-002");
+  const [idOc, setIdOc] = useState("");
   const [folioFactura, setFolioFactura] = useState("");
   const [anden, setAnden] = useState(2);
   const [fecha, setFecha] = useState("2026-11-25");
   const [horaInicio, setHoraInicio] = useState(11);
   const [duracionHoras, setDuracionHoras] = useState(1);
-  const [bultosForm, setBultosForm] = useState([
-    {
-      sucursalId: 1,
-      sku: "SKU-BEB-24",
-      descripcion: "Paquete Bebida Energética 24p",
-      piezas: 200,
-      pesoKg: 750,
-      volumenM3: 1.6,
-    },
-    {
-      sucursalId: 3,
-      sku: "SKU-BOT-50",
-      descripcion: "Caja Botana Salada 50p",
-      piezas: 100,
-      pesoKg: 420,
-      volumenM3: 1.2,
-    },
-  ]);
+  const [bultosForm, setBultosForm] = useState([]);
 
   const [enviando, setEnviando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
   const [error, setError] = useState(null);
   const [citaSeleccionadaQR, setCitaSeleccionadaQR] = useState(null);
 
-  const sincronizarConOc = (ocSeleccionada, listaCitas = []) => {
-    if (!ocSeleccionada) return;
+  const sincronizarConOc = (ocSeleccionada, todasLasCitas = []) => {
+    if (!ocSeleccionada) {
+      setIdOc("");
+      setFolioFactura("");
+      setBultosForm([]);
+      return;
+    }
     setIdOc(ocSeleccionada.idOc);
-    const folioAuto = generarFolioFacturaRealUnico(ocSeleccionada, listaCitas);
+    const folioAuto = generarFolioFacturaRealUnico(ocSeleccionada, todasLasCitas);
     setFolioFactura(folioAuto);
 
     if (ocSeleccionada.lineas?.length > 0) {
@@ -110,49 +97,106 @@ export default function ProveedorPage() {
     }
   };
 
-  const cargarDatos = async (idOcPreferida = null) => {
+  const cargarDatos = async (prov = proveedorActivo, idOcPreferida = null) => {
     const res = await fetch("/api/cedis");
     const json = await res.json();
     setData(json);
 
-    if (!citaSeleccionadaQR && json.citasFacturas?.length > 0) {
-      setCitaSeleccionadaQR(json.citasFacturas[0]);
+    if (!prov) return json;
+
+    // Filtrar exclusivamente las OCs y Citas que pertenecen al proveedor autenticado (idProveedor)
+    const ocsDelProveedor = (json.ordenesCompra || []).filter(
+      (oc) => Number(oc.idProveedor) === Number(prov.idProveedor)
+    );
+    const idsOcsProveedor = new Set(ocsDelProveedor.map((o) => o.idOc));
+    const citasDelProveedor = (json.citasFacturas || []).filter((c) => idsOcsProveedor.has(c.idOc));
+
+    if (citasDelProveedor.length > 0) {
+      const citaActualValida = citasDelProveedor.find((c) => c.folioFactura === citaSeleccionadaQR?.folioFactura);
+      setCitaSeleccionadaQR(citaActualValida || citasDelProveedor[0]);
+    } else {
+      setCitaSeleccionadaQR(null);
     }
 
-    // Seleccionar automáticamente la OC preferida o la primera OC disponible sin cita
-    const targetId = idOcPreferida || idOc;
-    let ocTarget = json.ordenesCompra?.find((o) => o.idOc === targetId);
-    if (!idOcPreferida && ocTarget?.citaFactura) {
-      const libre = json.ordenesCompra?.find((o) => !o.citaFactura);
-      if (libre) ocTarget = libre;
-    }
+    // Seleccionar la OC preferida o la primera OC disponible de este proveedor
+    let ocTarget = idOcPreferida
+      ? ocsDelProveedor.find((o) => o.idOc === idOcPreferida)
+      : ocsDelProveedor.find((o) => !o.citaFactura) || ocsDelProveedor[0];
 
-    if (ocTarget) {
-      sincronizarConOc(ocTarget, json.citasFacturas || []);
-    }
+    sincronizarConOc(ocTarget || null, json.citasFacturas || []);
     return json;
   };
 
+  const verificarSesionInicial = async () => {
+    setVerificandoSesion(true);
+    try {
+      const res = await fetch("/proveedor/api/auth");
+      const json = await res.json();
+      if (json.autenticado && json.proveedor) {
+        setProveedorActivo(json.proveedor);
+        await cargarDatos(json.proveedor);
+      } else {
+        setProveedorActivo(null);
+      }
+    } finally {
+      setVerificandoSesion(false);
+    }
+  };
+
   useEffect(() => {
-    cargarDatos();
+    verificarSesionInicial();
   }, []);
 
-  const ocActual = data?.ordenesCompra?.find((o) => o.idOc === idOc);
+  const handleLoginExitoso = async (prov) => {
+    setProveedorActivo(prov);
+    setMensaje(null);
+    setError(null);
+    setVistaActiva("AGENDAR");
+    await cargarDatos(prov);
+  };
 
-  // Cuando el proveedor cambia de Orden de Compra, autogenerar su folio único de factura y precargar sus líneas
+  const handleCerrarSesion = async () => {
+    await fetch("/proveedor/api/auth", { method: "DELETE" });
+    setProveedorActivo(null);
+    setCitaSeleccionadaQR(null);
+    setMensaje(null);
+    setError(null);
+  };
+
+  if (verificandoSesion) {
+    return (
+      <div className="p-8 text-center text-sm text-slate-500 font-medium">
+        Verificando sesión segura del Portal de Proveedores...
+      </div>
+    );
+  }
+
+  // Si no hay proveedor autenticado, mostrar pantalla de Login
+  if (!proveedorActivo) {
+    return <ProveedorLogin onLoginExitoso={handleLoginExitoso} />;
+  }
+
+  // Filtrar estrictamente las Órdenes de Compra y Citas/Facturas de este proveedor (idProveedor)
+  const misOrdenesCompra = (data?.ordenesCompra || []).filter(
+    (oc) => Number(oc.idProveedor) === Number(proveedorActivo.idProveedor)
+  );
+  const misIdsOc = new Set(misOrdenesCompra.map((o) => o.idOc));
+  const misCitasFacturas = (data?.citasFacturas || []).filter((c) => misIdsOc.has(c.idOc));
+
+  const ocActual = misOrdenesCompra.find((o) => o.idOc === idOc);
+
   const handleCambiarOC = (nuevoIdOc) => {
-    const nuevaOc = data?.ordenesCompra?.find((o) => o.idOc === nuevoIdOc);
+    const nuevaOc = misOrdenesCompra.find((o) => o.idOc === nuevoIdOc);
     if (nuevaOc) {
       sincronizarConOc(nuevaOc, data?.citasFacturas || []);
     }
   };
 
-  // Callback cuando se emite una nueva OC desde el Simulador ERP
   const handleOcNuevaCreada = async (nuevaOc) => {
-    const json = await cargarDatos(nuevaOc.idOc);
+    const json = await cargarDatos(proveedorActivo, nuevaOc.idOc);
     sincronizarConOc(nuevaOc, json?.citasFacturas || []);
     setMensaje(
-      `Orden de Compra ${nuevaOc.idOc} (${nuevaOc.proveedor}) emitida exitosamente. Se le asignó automáticamente el Folio Fiscal único ${generarFolioFacturaRealUnico(
+      `Orden de Compra ${nuevaOc.idOc} emitida para tu cuenta (idProveedor #${proveedorActivo.idProveedor}). Folio Fiscal asignado: ${generarFolioFacturaRealUnico(
         nuevaOc,
         json?.citasFacturas || []
       )}.`
@@ -160,7 +204,7 @@ export default function ProveedorPage() {
     setVistaActiva("AGENDAR");
   };
 
-  // Validaciones en tiempo real
+  // Validaciones en tiempo real (contra todas las citas del CEDIS para evitar colisión de folio o andén)
   const folioDuplicado = data?.citasFacturas?.some(
     (c) => c.folioFactura.trim().toUpperCase() === folioFactura.trim().toUpperCase()
   );
@@ -181,6 +225,11 @@ export default function ProveedorPage() {
     setError(null);
     setMensaje(null);
 
+    if (!ocActual) {
+      setError("No tienes una Orden de Compra seleccionada.");
+      return;
+    }
+
     if (duracionHoras < 1 || duracionHoras > 2) {
       setError("La duración de la cita debe ser de mínimo 1 hora y máximo 2 horas.");
       return;
@@ -188,7 +237,7 @@ export default function ProveedorPage() {
 
     if (ocYaTieneCita) {
       setError(
-        `La Orden de Compra ${idOc} ya tiene una factura asociada (${ocActual.citaFactura.folioFactura}). Selecciona otra OC disponible o emite una nueva en el Simulador ERP.`
+        `La Orden de Compra ${idOc} ya tiene una factura asociada (${ocActual.citaFactura.folioFactura}). Selecciona otra OC o emite una nueva en el Simulador ERP.`
       );
       return;
     }
@@ -207,7 +256,7 @@ export default function ProveedorPage() {
           action: "AGENDAR_CITA",
           idOc,
           folioFactura: folioFactura.trim().toUpperCase(),
-          proveedor: ocActual?.proveedor || "Proveedor Externo",
+          proveedor: proveedorActivo.nombre,
           anden,
           fecha,
           horaInicio,
@@ -221,10 +270,10 @@ export default function ProveedorPage() {
         setError(json.error);
       } else {
         setMensaje(
-          `¡Cita confirmada en Andén #${anden} (${horaInicio}:00 a ${horaInicio + duracionHoras}:00 hrs)! Se registró la Factura Fiscal ${json.cita.folioFactura} y se generaron ${json.cita.bultos.length} etiquetas QR listas para escanear en /handheld.`
+          `¡Cita confirmada en Andén #${anden} (${horaInicio}:00 a ${horaInicio + duracionHoras}:00 hrs)! Se registró tu Factura Fiscal ${json.cita.folioFactura} y se generaron ${json.cita.bultos.length} etiquetas QR.`
         );
+        await cargarDatos(proveedorActivo, idOc);
         setCitaSeleccionadaQR(json.cita);
-        await cargarDatos();
         setVistaActiva("ETIQUETAS");
       }
     } finally {
@@ -232,10 +281,33 @@ export default function ProveedorPage() {
     }
   };
 
-  const ocsDisponiblesCount = (data?.ordenesCompra || []).filter((o) => !o.citaFactura).length;
+  const misOcsDisponiblesCount = misOrdenesCompra.filter((o) => !o.citaFactura).length;
 
   return (
     <div className="space-y-6">
+      {/* Barra Superior de Sesión del Proveedor Autenticado */}
+      <div className="no-print bg-slate-900 text-white rounded-2xl px-6 py-3.5 border border-slate-800 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="bg-emerald-500 text-slate-950 font-black font-mono text-xs px-2.5 py-1 rounded">
+            SESIÓN ACTIVA · idProveedor #{proveedorActivo.idProveedor}
+          </span>
+          <div>
+            <p className="text-sm font-extrabold text-white">{proveedorActivo.nombre}</p>
+            <p className="text-xs text-slate-400 font-mono">
+              {proveedorActivo.correo} · Mostrando exclusivamente tus {misOrdenesCompra.length} Órdenes de Compra
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleCerrarSesion}
+          className="bg-slate-800 hover:bg-red-600 text-slate-200 hover:text-white border border-slate-700 font-extrabold text-xs px-4 py-2 rounded-xl transition"
+        >
+          Cerrar Sesión / Cambiar Proveedor
+        </button>
+      </div>
+
       {/* Encabezado Industrial del Portal de Proveedores */}
       <div className="no-print bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -252,7 +324,7 @@ export default function ProveedorPage() {
               Portal de Agendamiento de Citas, Facturación CFDI y Etiquetado QR
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              Emite o selecciona una Orden de Compra, obtén tu Folio Fiscal Único autogenerado (bloqueado contra edición y duplicados), reserva andén y genera las etiquetas QR por bulto.
+              Visualiza únicamente las Órdenes de Compra adjudicadas a <strong>{proveedorActivo.nombre}</strong>, obtén tu Folio Fiscal Único autogenerado, reserva andén y descarga tus etiquetas QR.
             </p>
           </div>
 
@@ -267,7 +339,7 @@ export default function ProveedorPage() {
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              1. Agendar Cita y Factura
+              1. Agendar Cita y Factura ({misOcsDisponiblesCount} libres)
             </button>
             <button
               type="button"
@@ -279,9 +351,6 @@ export default function ProveedorPage() {
               }`}
             >
               <span>+ Simulador ERP: Emitir OC</span>
-              <span className="bg-blue-100 text-blue-900 px-1.5 py-0.2 rounded-full text-[10px] font-black">
-                {ocsDisponiblesCount} libres
-              </span>
             </button>
             <button
               type="button"
@@ -292,7 +361,7 @@ export default function ProveedorPage() {
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <span>2. Plancha Etiquetas QR</span>
+              <span>2. Mis Etiquetas QR</span>
               <span className="bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded-full text-[10px] font-black">
                 {citaSeleccionadaQR?.bultos?.length || 0}
               </span>
@@ -306,7 +375,7 @@ export default function ProveedorPage() {
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              3. Bitácora ({data?.citasFacturas?.length || 0})
+              3. Mis Citas ({misCitasFacturas.length})
             </button>
           </div>
         </div>
@@ -335,9 +404,10 @@ export default function ProveedorPage() {
         )}
       </div>
 
-      {/* VISTA SIMULADOR ERP: EMISIÓN DE NUEVAS ÓRDENES DE COMPRA */}
+      {/* VISTA SIMULADOR ERP: EMISIÓN DE NUEVAS ÓRDENES DE COMPRA PARA EL PROVEEDOR ACTIVO */}
       {vistaActiva === "SIMULADOR_OC" && (
         <OcErpSimulator
+          proveedorActivo={proveedorActivo}
           ordenesCompra={data?.ordenesCompra || []}
           sucursales={data?.sucursales || []}
           onOcCreada={handleOcNuevaCreada}
@@ -347,15 +417,15 @@ export default function ProveedorPage() {
       {/* VISTA 1: ASISTENTE DE AGENDAMIENTO + PARRILLA DE ANDENES + DESGLOSE DE BULTOS */}
       {vistaActiva === "AGENDAR" && (
         <form onSubmit={handleAgendar} className="space-y-6 no-print">
-          {/* PASO 1: Orden de Compra y Folio Único de Factura Autogenerado (Solo Lectura) */}
+          {/* PASO 1: Orden de Compra del Proveedor Activo y Folio Único de Factura Autogenerado */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <span className="text-[11px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded">
-                  Paso 1 · Vinculación Automática OC ↔ Factura Fiscal (Relación 1 a 1)
+                  Paso 1 · Mis Órdenes de Compra (Filtradas por idProveedor = {proveedorActivo.idProveedor})
                 </span>
                 <h2 className="text-lg font-bold mt-1">
-                  Selección de Orden de Compra (OC) y Asignación Automática de Folio Fiscal CFDI
+                  Selección de Orden de Compra y Asignación Automática de Folio Fiscal CFDI
                 </h2>
               </div>
               <button
@@ -363,26 +433,26 @@ export default function ProveedorPage() {
                 onClick={() => setVistaActiva("SIMULADOR_OC")}
                 className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold px-3.5 py-2 rounded-lg transition shadow"
               >
-                + Simular Nueva Orden de Compra (ERP CEDIS)
+                + Simular Nueva OC para mi Proveedor
               </button>
             </div>
 
             <div className="p-6 grid md:grid-cols-2 gap-6">
-              {/* Selector de OC */}
+              {/* Selector de OC filtrado estrictamente por el proveedor logueado */}
               <div className="space-y-2">
                 <label className="block text-xs font-extrabold uppercase text-slate-600">
-                  1. Orden de Compra Emitida por el CEDIS
+                  1. Mis Órdenes de Compra Emitidas por el CEDIS ({misOrdenesCompra.length})
                 </label>
                 <select
                   value={idOc}
                   onChange={(e) => handleCambiarOC(e.target.value)}
                   className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-bold bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
-                  {data?.ordenesCompra?.map((oc) => (
+                  {misOrdenesCompra.map((oc) => (
                     <option key={oc.idOc} value={oc.idOc}>
                       {oc.idOc} — {oc.proveedor}{" "}
                       {oc.citaFactura
-                        ? `(Ya entregada con ${oc.citaFactura.folioFactura})`
+                        ? `(Ya agendada con ${oc.citaFactura.folioFactura})`
                         : "(Disponible para Agendar)"}
                     </option>
                   ))}
@@ -391,7 +461,7 @@ export default function ProveedorPage() {
                 {ocYaTieneCita ? (
                   <div className="text-xs font-bold text-amber-900 bg-amber-50 border border-amber-300 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2">
                     <span>
-                      ⚠️ Esta OC ya tiene registrada la factura{" "}
+                      ⚠️ Tu orden <span className="font-mono">{idOc}</span> ya tiene registrada la factura{" "}
                       <span className="font-mono">{ocActual.citaFactura.folioFactura}</span> en Andén #
                       {ocActual.citaFactura.anden}.
                     </span>
@@ -400,13 +470,13 @@ export default function ProveedorPage() {
                       onClick={() => setVistaActiva("SIMULADOR_OC")}
                       className="bg-slate-900 text-white px-2.5 py-1 rounded text-[11px] font-extrabold"
                     >
-                      Emitir Nueva OC →
+                      Simular Nueva OC →
                     </button>
                   </div>
                 ) : (
                   <p className="text-xs text-emerald-700 font-semibold">
-                    ✓ OC disponible · Proveedor titular: <strong>{ocActual?.proveedor}</strong> (
-                    {ocActual?.lineas?.length || 0} partidas solicitadas).
+                    ✓ OC adjudicada a <strong>{proveedorActivo.nombre}</strong> (idProveedor #{proveedorActivo.idProveedor}) ·{" "}
+                    {ocActual?.lineas?.length || 0} partidas solicitadas.
                   </p>
                 )}
               </div>
@@ -437,7 +507,7 @@ export default function ProveedorPage() {
 
                 <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg font-medium">
                   ✓ Formato fiscal real <strong>CFDI-[RFC]-[AÑO]-[CONSECUTIVO]</strong> asignado automáticamente a{" "}
-                  <strong>{ocActual?.proveedor}</strong> sin posibilidad de duplicación ni alteración manual.
+                  <strong>{proveedorActivo.nombre}</strong> sin posibilidad de duplicación ni alteración manual.
                 </p>
               </div>
             </div>
@@ -469,7 +539,7 @@ export default function ProveedorPage() {
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
             <div className="text-xs text-slate-600">
               <p className="font-bold text-slate-900 text-sm">
-                Resumen antes de confirmar: {idOc} → Factura Fiscal {folioFactura}
+                Resumen antes de confirmar: {idOc} ({proveedorActivo.nombre}) → Factura Fiscal {folioFactura}
               </p>
               <p>
                 Andén #{anden} · Fecha {fecha} de {String(horaInicio).padStart(2, "0")}:00 a{" "}
@@ -480,9 +550,9 @@ export default function ProveedorPage() {
 
             <button
               type="submit"
-              disabled={enviando || folioDuplicado || ocYaTieneCita || hayTraslapeAnden || duracionInvalida}
+              disabled={enviando || !ocActual || folioDuplicado || ocYaTieneCita || hayTraslapeAnden || duracionInvalida}
               className={`px-6 py-3 rounded-xl font-extrabold text-sm transition shadow-md ${
-                enviando || folioDuplicado || ocYaTieneCita || hayTraslapeAnden || duracionInvalida
+                enviando || !ocActual || folioDuplicado || ocYaTieneCita || hayTraslapeAnden || duracionInvalida
                   ? "bg-slate-300 text-slate-500 cursor-not-allowed"
                   : "bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer"
               }`}
@@ -495,84 +565,92 @@ export default function ProveedorPage() {
         </form>
       )}
 
-      {/* VISTA 2: PLANCHA DE IMPRESIÓN DE ETIQUETAS QR */}
+      {/* VISTA 2: PLANCHA DE IMPRESIÓN DE ETIQUETAS QR DEL PROVEEDOR ACTIVO */}
       {vistaActiva === "ETIQUETAS" && (
         <QrLabelsSheet
-          citasFacturas={data?.citasFacturas || []}
+          citasFacturas={misCitasFacturas}
           citaSeleccionadaQR={citaSeleccionadaQR}
           setCitaSeleccionadaQR={setCitaSeleccionadaQR}
           sucursales={data?.sucursales || []}
         />
       )}
 
-      {/* VISTA 3: BITÁCORA DE CITAS Y CONEXIÓN CON HANDHELD */}
+      {/* VISTA 3: BITÁCORA DE CITAS DEL PROVEEDOR ACTIVO */}
       {vistaActiva === "CITAS" && (
         <div className="no-print bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold">Bitácora de Citas Programadas en los 4 Andenes de Recibo</h2>
+              <h2 className="text-lg font-bold">
+                Mis Citas Programadas · {proveedorActivo.nombre} (idProveedor #{proveedorActivo.idProveedor})
+              </h2>
               <p className="text-xs text-slate-400">
-                Haz clic en cualquier cita para abrir e imprimir su plancha de etiquetas QR o enviarla a validación en /handheld.
+                Mostrando exclusivamente las entregas programadas por tu empresa en los 4 andenes del CEDIS.
               </p>
             </div>
           </div>
 
-          <div className="p-6 grid md:grid-cols-2 gap-4">
-            {data?.citasFacturas?.map((cita) => {
-              const bultosRecibidos = (cita.bultos || []).filter(
-                (b) => b.estado === "EN_RACK" || b.estado === "EMBARCADO"
-              ).length;
-              const bultosPendientes = (cita.bultos || []).filter((b) => b.estado === "PENDIENTE_RECIBO").length;
+          {misCitasFacturas.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500">
+              Aún no tienes citas programadas para tus Órdenes de Compra. Ve a la pestaña 1 para agendar tu primera entrega.
+            </div>
+          ) : (
+            <div className="p-6 grid md:grid-cols-2 gap-4">
+              {misCitasFacturas.map((cita) => {
+                const bultosRecibidos = (cita.bultos || []).filter(
+                  (b) => b.estado === "EN_RACK" || b.estado === "EMBARCADO"
+                ).length;
+                const bultosPendientes = (cita.bultos || []).filter((b) => b.estado === "PENDIENTE_RECIBO").length;
 
-              return (
-                <div
-                  key={cita.folioFactura}
-                  className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className="text-[10px] font-black uppercase bg-slate-900 text-amber-400 px-2.5 py-0.5 rounded">
-                        ANDÉN #{cita.anden} · {cita.fecha} ({String(cita.horaInicio).padStart(2, "0")}:00 -{" "}
-                        {String(cita.horaInicio + cita.duracionHoras).padStart(2, "0")}:00 hrs)
+                return (
+                  <div
+                    key={cita.folioFactura}
+                    className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="text-[10px] font-black uppercase bg-slate-900 text-amber-400 px-2.5 py-0.5 rounded">
+                          ANDÉN #{cita.anden} · {cita.fecha} ({String(cita.horaInicio).padStart(2, "0")}:00 -{" "}
+                          {String(cita.horaInicio + cita.duracionHoras).padStart(2, "0")}:00 hrs)
+                        </span>
+                        <h3 className="text-base font-extrabold font-mono text-slate-900 mt-1.5">
+                          Factura: {cita.folioFactura} · {cita.idOc}
+                        </h3>
+                        <p className="text-xs text-slate-600 font-medium">{cita.proveedor}</p>
+                      </div>
+                      <span className="text-xs font-extrabold px-2.5 py-1 rounded bg-emerald-100 text-emerald-800">
+                        {cita.bultos?.length || 0} Bultos QR
                       </span>
-                      <h3 className="text-base font-extrabold font-mono text-slate-900 mt-1.5">
-                        Factura: {cita.folioFactura} · {cita.idOc}
-                      </h3>
-                      <p className="text-xs text-slate-600 font-medium">{cita.proveedor}</p>
                     </div>
-                    <span className="text-xs font-extrabold px-2.5 py-1 rounded bg-emerald-100 text-emerald-800">
-                      {cita.bultos?.length || 0} Bultos QR
-                    </span>
-                  </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200 text-xs">
-                    <span className="text-slate-600">
-                      Recibidos en Rack: <strong>{bultosRecibidos}</strong> · Pendientes en Andén:{" "}
-                      <strong>{bultosPendientes}</strong>
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCitaSeleccionadaQR(cita);
-                          setVistaActiva("ETIQUETAS");
-                        }}
-                        className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg"
-                      >
-                        Ver Etiquetas QR
-                      </button>
-                      <Link
-                        href="/handheld"
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg"
-                      >
-                        Recibir en Handheld →
-                      </Link>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200 text-xs">
+                      <span className="text-slate-600">
+                        Recibidos en Rack: <strong>{bultosRecibidos}</strong> · Pendientes en Andén:{" "}
+                        <strong>{bultosPendientes}</strong>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCitaSeleccionadaQR(cita);
+                            setVistaActiva("ETIQUETAS");
+                          }}
+                          className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg"
+                        >
+                          Ver Etiquetas QR
+                        </button>
+                        <Link
+                          href="/handheld"
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg"
+                        >
+                          Recibir en Handheld →
+                        </Link>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

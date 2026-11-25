@@ -31,11 +31,51 @@ async function main() {
     });
   }
 
-  // 2. Crear Órdenes de Compra (OC) de ejemplo para la demo
+  // 2. Crear Proveedores con sus credenciales de acceso al portal /proveedor
+  const proveedoresSeed = [
+    {
+      idProveedor: 1,
+      nombre: "Distribuidora Industrial del Bajío S.A.",
+      correo: "contacto@bajioindustrial.mx",
+      password: "Bajio2026*",
+    },
+    {
+      idProveedor: 2,
+      nombre: "Alimentos y Bebidas Nacionales S.A.",
+      correo: "logistica@abnacionales.mx",
+      password: "Alimentos2026*",
+    },
+    {
+      idProveedor: 3,
+      nombre: "Ferretería y Suministros Globales",
+      correo: "entregas@ferreglobal.mx",
+      password: "Ferre2026*",
+    },
+    {
+      idProveedor: 4,
+      nombre: "Corporativo Industrial Automotriz S.A. de C.V.",
+      correo: "cedis@corpautomotriz.mx",
+      password: "Auto2026*",
+    },
+  ];
+
+  for (const prov of proveedoresSeed) {
+    await prisma.proveedor.upsert({
+      where: { idProveedor: prov.idProveedor },
+      update: {
+        nombre: prov.nombre,
+        correo: prov.correo,
+        password: prov.password,
+      },
+      create: prov,
+    });
+  }
+
+  // 3. Crear Órdenes de Compra (OC) relacionadas con Proveedor mediante idProveedor
   const ocs = [
     {
       idOc: "OC-2026-001",
-      proveedor: "Distribuidora Industrial del Bajío S.A.",
+      idProveedor: 1,
       lineas: [
         { sku: "SKU-ACE-01", descripcion: "Caja Aceite Motor Sintético 1L", sucursalId: 1, piezasPedidas: 120 },
         { sku: "SKU-BAT-12", descripcion: "Batería Automotriz Uso Rudo 12V", sucursalId: 1, piezasPedidas: 40 },
@@ -44,7 +84,7 @@ async function main() {
     },
     {
       idOc: "OC-2026-002",
-      proveedor: "Alimentos y Bebidas Nacionales S.A.",
+      idProveedor: 2,
       lineas: [
         { sku: "SKU-BEB-24", descripcion: "Paquete Bebida Energética 24p", sucursalId: 1, piezasPedidas: 200 },
         { sku: "SKU-BOT-50", descripcion: "Caja Botana Salada 50p", sucursalId: 3, piezasPedidas: 100 },
@@ -52,10 +92,18 @@ async function main() {
     },
     {
       idOc: "OC-2026-003",
-      proveedor: "Ferretería y Suministros Globales",
+      idProveedor: 3,
       lineas: [
         { sku: "SKU-HER-10", descripcion: "Caja Herramienta Pesada", sucursalId: 4, piezasPedidas: 30 },
         { sku: "SKU-TOR-99", descripcion: "Tornillería Acero Alta Densidad", sucursalId: 1, piezasPedidas: 500 },
+      ],
+    },
+    {
+      idOc: "OC-2026-004",
+      idProveedor: 4,
+      lineas: [
+        { sku: "SKU-LUB-20W50", descripcion: "Caja Lubricante Multigrado 20W50", sucursalId: 1, piezasPedidas: 150 },
+        { sku: "SKU-BAL-DEL", descripcion: "Juego Balatas Cerámicas Delanteras", sucursalId: 2, piezasPedidas: 80 },
       ],
     },
   ];
@@ -66,7 +114,7 @@ async function main() {
       await prisma.ordenCompra.create({
         data: {
           idOc: oc.idOc,
-          proveedor: oc.proveedor,
+          idProveedor: oc.idProveedor,
           lineas: {
             create: oc.lineas,
           },
@@ -75,7 +123,7 @@ async function main() {
     }
   }
 
-  // 3. Crear una Cita/Factura de demostración con bultos ya en RACK-01 (al ~85% del Tortón para que en la demo un escaneo alcance el >=90%)
+  // 4. Crear una Cita/Factura de demostración con bultos ya en RACK-01 (al ~85% del Tortón para que en la demo un escaneo alcance el >=90%)
   const citaDemo = await prisma.citaFactura.findUnique({ where: { folioFactura: "FAC-2026-8841" } });
   if (!citaDemo) {
     await prisma.citaFactura.create({
@@ -90,7 +138,6 @@ async function main() {
         estado: "EN_RECIBO",
         bultos: {
           create: [
-            // 11 tarimas/bultos consolidados ya en RACK-01 (10,100 kg y 24.5 m3 -> ~84.1% peso y ~85.7% volumen)
             {
               idBulto: "BUL-8841-01",
               idOc: "OC-2026-001",
@@ -103,7 +150,6 @@ async function main() {
               volumenM3: 24.5,
               estado: "EN_RACK",
             },
-            // Bulto pendiente de escanear en andén que sube a RACK-01 por encima del 90% (suma +950 kg = 11,050 kg [92.1%] y +2.1 m3 = 26.6 m3 [93.0%])
             {
               idBulto: "BUL-8841-02",
               idOc: "OC-2026-001",
@@ -116,7 +162,6 @@ async function main() {
               volumenM3: 2.1,
               estado: "PENDIENTE_RECIBO",
             },
-            // Bulto para Sucursal 02 pendiente de recibo
             {
               idBulto: "BUL-8841-03",
               idOc: "OC-2026-001",
@@ -135,7 +180,7 @@ async function main() {
     });
   }
 
-  console.log("Seed completado: 32 Sucursales/Racks, 3 OCs y Bultos de prueba creados.");
+  console.log("Seed completado: 32 Sucursales/Racks, 4 Proveedores, 4 OCs y Bultos de prueba creados.");
 }
 
 main()
