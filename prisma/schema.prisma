@@ -22,7 +22,17 @@ model Proveedor {
   nombre        String        @unique
   correo        String        @unique
   password      String
+  productos     Producto[]
   ordenesCompra OrdenCompra[]
+}
+
+model Producto {
+  sku               String    @id
+  idProveedor       Int
+  descripcion       String
+  pesoUnitarioKg    Float
+  volumenUnitarioM3 Float
+  proveedorRel      Proveedor @relation(fields: [idProveedor], references: [idProveedor])
 }
 
 model OrdenCompra {

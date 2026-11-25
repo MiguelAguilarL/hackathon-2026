@@ -6,8 +6,29 @@ import { useState } from "react";
 const TARIMA_MAX_PESO_KG = 1000; // 1 tonelada máxima por tarima
 const TARIMA_MAX_VOLUMEN_M3 = Number((1.12 * 1.15 * 1.85).toFixed(2)); // 2.38 m3 por tarima
 
+// Función auxiliar para calcular peso y volumen exactos desde el catálogo Producto
+export function calcularDimensionesBulto(sku, piezas, catalogoProductos = []) {
+  const prod = catalogoProductos.find((p) => p.sku === sku);
+  const cantidad = Math.max(0, Number(piezas) || 0);
+  if (!prod) {
+    return {
+      pesoUnitarioKg: 10,
+      volumenUnitarioM3: 0.04,
+      pesoKg: Number((cantidad * 10).toFixed(2)),
+      volumenM3: Number((cantidad * 0.04).toFixed(3)),
+    };
+  }
+  return {
+    pesoUnitarioKg: prod.pesoUnitarioKg,
+    volumenUnitarioM3: prod.volumenUnitarioM3,
+    pesoKg: Number((cantidad * prod.pesoUnitarioKg).toFixed(2)),
+    volumenM3: Number((cantidad * prod.volumenUnitarioM3).toFixed(3)),
+  };
+}
+
 export default function PackingListBuilder({
   ocActual,
+  productosProveedor = [],
   sucursales = [],
   bultosForm,
   setBultosForm,
@@ -15,52 +36,65 @@ export default function PackingListBuilder({
 }) {
   const [cajasPorLinea, setCajasPorLinea] = useState(2);
 
-  // Importa todas las líneas de la Orden de Compra seleccionada con 1 clic
+  // Importa todas las líneas de la Orden de Compra calculando peso y volumen desde la tabla Producto
   const importarLineasDeOC = () => {
     if (!ocActual?.lineas?.length) return;
-    const nuevosBultos = ocActual.lineas.map((linea) => ({
-      sucursalId: linea.sucursalId,
-      sku: linea.sku,
-      descripcion: linea.descripcion,
-      piezas: linea.piezasPedidas,
-      pesoKg: Math.min(850, Math.max(50, linea.piezasPedidas * 5)),
-      volumenM3: 1.4,
-    }));
+    const nuevosBultos = ocActual.lineas.map((linea) => {
+      const dims = calcularDimensionesBulto(linea.sku, linea.piezasPedidas, productosProveedor);
+      return {
+        sucursalId: linea.sucursalId,
+        sku: linea.sku,
+        descripcion: linea.descripcion,
+        piezas: linea.piezasPedidas,
+        pesoKg: dims.pesoKg,
+        volumenM3: dims.volumenM3,
+      };
+    });
     setBultosForm(nuevosBultos);
   };
 
-  // Divide una línea de la OC en N bultos/cajas del mismo SKU (respetando la regla de 1 solo SKU por bulto)
+  // Divide una línea de la OC en N bultos del mismo SKU recalculando automáticamente el peso y volumen
   const dividirLineaEnBultos = (linea, numBultos) => {
     const n = Math.max(1, Number(numBultos) || 1);
     const piezasBase = Math.floor(linea.piezasPedidas / n);
     const resto = linea.piezasPedidas % n;
 
     const generados = Array.from({ length: n }, (_, i) => {
-      const pzas = i === n - 1 ? piezasBase + resto : piezasBase;
+      const pzas = Math.max(1, i === n - 1 ? piezasBase + resto : piezasBase);
+      const dims = calcularDimensionesBulto(linea.sku, pzas, productosProveedor);
       return {
         sucursalId: linea.sucursalId,
         sku: linea.sku,
         descripcion: linea.descripcion,
-        piezas: Math.max(1, pzas),
-        pesoKg: Number(Math.min(900, Math.max(25, pzas * 4.5)).toFixed(1)),
-        volumenM3: Number(Math.min(2.2, Math.max(0.25, (1.8 / n))).toFixed(2)),
+        piezas: pzas,
+        pesoKg: dims.pesoKg,
+        volumenM3: dims.volumenM3,
       };
     });
 
-    setBultosForm([...bultosForm, ...generados]);
+    // Reemplaza los bultos previos de esa misma línea/sucursal por los nuevos bultos divididos
+    const otrosBultos = bultosForm.filter(
+      (b) => !(b.sku === linea.sku && Number(b.sucursalId) === Number(linea.sucursalId))
+    );
+    setBultosForm([...otrosBultos, ...generados]);
   };
 
   const agregarBultoIndividual = () => {
     const primeraLinea = ocActual?.lineas?.[0];
+    const prodDefault = productosProveedor.find((p) => p.sku === primeraLinea?.sku) || productosProveedor[0];
+    const skuInicial = primeraLinea?.sku || prodDefault?.sku || "PAP-BOND-CARTA";
+    const piezasIniciales = 20;
+    const dims = calcularDimensionesBulto(skuInicial, piezasIniciales, productosProveedor);
+
     setBultosForm([
       ...bultosForm,
       {
         sucursalId: primeraLinea?.sucursalId || 1,
-        sku: primeraLinea?.sku || "SKU-GEN-01",
-        descripcion: primeraLinea?.descripcion || "Mercancía General",
-        piezas: 25,
-        pesoKg: 250,
-        volumenM3: 0.85,
+        sku: skuInicial,
+        descripcion: primeraLinea?.descripcion || prodDefault?.descripcion || "Artículo de Papelería",
+        piezas: piezasIniciales,
+        pesoKg: dims.pesoKg,
+        volumenM3: dims.volumenM3,
       },
     ]);
   };
@@ -72,20 +106,33 @@ export default function PackingListBuilder({
 
   const actualizarBulto = (index, campo, valor) => {
     const copia = [...bultosForm];
-    copia[index] = { ...copia[index], [campo]: valor };
+    const actual = { ...copia[index], [campo]: valor };
 
-    // Si cambia el SKU y existe en la OC, autocompletar su descripción y sucursal sugerida
-    if (campo === "sku" && ocActual?.lineas) {
-      const lineaMatch = ocActual.lineas.find((l) => l.sku === valor);
+    // Si cambia el SKU, actualizar descripción desde catálogo Producto o línea OC
+    if (campo === "sku") {
+      const prodCatalogo = productosProveedor.find((p) => p.sku === valor);
+      const lineaMatch = ocActual?.lineas?.find((l) => l.sku === valor);
+      if (prodCatalogo) {
+        actual.descripcion = prodCatalogo.descripcion;
+      } else if (lineaMatch) {
+        actual.descripcion = lineaMatch.descripcion;
+      }
       if (lineaMatch) {
-        copia[index].descripcion = lineaMatch.descripcion;
-        copia[index].sucursalId = lineaMatch.sucursalId;
+        actual.sucursalId = lineaMatch.sucursalId;
       }
     }
+
+    // Recalcular peso y volumen automáticamente cada vez que cambie el SKU o la cantidad de piezas
+    if (campo === "sku" || campo === "piezas") {
+      const dims = calcularDimensionesBulto(actual.sku, actual.piezas, productosProveedor);
+      actual.pesoKg = dims.pesoKg;
+      actual.volumenM3 = dims.volumenM3;
+    }
+
+    copia[index] = actual;
     setBultosForm(copia);
   };
 
-  // Totales de la factura
   const totalPiezas = bultosForm.reduce((acc, b) => acc + Number(b.piezas || 0), 0);
   const totalPesoKg = bultosForm.reduce((acc, b) => acc + Number(b.pesoKg || 0), 0);
   const totalVolumenM3 = bultosForm.reduce((acc, b) => acc + Number(b.volumenM3 || 0), 0);
@@ -95,13 +142,14 @@ export default function PackingListBuilder({
       <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-[11px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded">
-            Paso 3 · Desglose de Factura por Bulto (Packing List / ASN)
+            Paso 3 · Desglose de Factura por Bulto (Cálculo Automático desde Tabla Producto)
           </span>
           <h2 className="text-lg font-bold mt-1">
-            Identificación de Bultos / Tarimas · Factura <span className="font-mono text-amber-400">{folioFactura || "SIN-FOLIO"}</span>
+            Identificación de Bultos de Papelería · Factura{" "}
+            <span className="font-mono text-amber-400">{folioFactura || "SIN-FOLIO"}</span>
           </h2>
           <p className="text-xs text-slate-400">
-            Regla estricta: No se mezclan SKUs distintos en un mismo bulto · Base tarima 1.12 × 1.15 m, altura máx 1.85 m con film (máx 1,000 kg / 2.38 m³).
+            El Peso (kg) y Volumen (m³) se calculan automáticamente multiplicando las piezas por el peso/volumen unitario del producto en la base de datos.
           </p>
         </div>
 
@@ -111,7 +159,7 @@ export default function PackingListBuilder({
             onClick={importarLineasDeOC}
             className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-3.5 py-2 rounded-lg transition"
           >
-            Autocompletar desde Líneas de la OC
+            Restaurar Bultos desde la OC
           </button>
           <button
             type="button"
@@ -124,7 +172,7 @@ export default function PackingListBuilder({
       </div>
 
       <div className="p-6 space-y-6">
-        {/* Espejo de la Orden de Compra para comparar piezas pedidas vs piezas empacadas en bultos */}
+        {/* Espejo de la Orden de Compra */}
         {ocActual?.lineas?.length > 0 && (
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -133,11 +181,11 @@ export default function PackingListBuilder({
                   Conciliación contra Orden de Compra {ocActual.idOc} ({ocActual.proveedor})
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Verifica que la suma de piezas en tus bultos coincida con la OC. En andén hay Cero Tolerancia a SKUs no solicitados o excedentes.
+                  Puedes dividir cualquier partida en varias tarimas/bultos si una sola supera los 1,000 kg o 2.38 m³.
                 </p>
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-600 font-medium">Dividir línea en:</span>
+                <span className="text-slate-600 font-medium">Dividir partida en:</span>
                 <select
                   value={cajasPorLinea}
                   onChange={(e) => setCajasPorLinea(Number(e.target.value))}
@@ -158,6 +206,7 @@ export default function PackingListBuilder({
                   .filter((b) => b.sku === linea.sku && Number(b.sucursalId) === Number(linea.sucursalId))
                   .reduce((acc, b) => acc + Number(b.piezas || 0), 0);
 
+                const dimsUnit = calcularDimensionesBulto(linea.sku, 1, productosProveedor);
                 const excedido = piezasDeclaradas > linea.piezasPedidas;
                 const completo = piezasDeclaradas === linea.piezasPedidas;
 
@@ -180,6 +229,9 @@ export default function PackingListBuilder({
                         </span>
                       </div>
                       <p className="text-[11px] opacity-80 mt-0.5">{linea.descripcion}</p>
+                      <p className="text-[10px] font-mono font-bold text-slate-600 mt-1">
+                        Catálogo: {dimsUnit.pesoUnitarioKg} kg/pza · {dimsUnit.volumenUnitarioM3} m³/pza
+                      </p>
                     </div>
 
                     <div className="mt-3 pt-2 border-t border-slate-200/70 flex items-center justify-between">
@@ -194,7 +246,7 @@ export default function PackingListBuilder({
                         onClick={() => dividirLineaEnBultos(linea, cajasPorLinea)}
                         className="text-[11px] font-bold bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded transition"
                       >
-                        + Dividir en {cajasPorLinea} cajas
+                        Dividir en {cajasPorLinea} bultos
                       </button>
                     </div>
                   </div>
@@ -204,14 +256,14 @@ export default function PackingListBuilder({
           </div>
         )}
 
-        {/* Tabla de Bultos de la Factura */}
+        {/* Lista de Bultos con Peso y Volumen Autocalculados (Solo Lectura) */}
         <div className="space-y-3">
           {bultosForm.map((bulto, idx) => {
             const idBultoPreview = `BUL-${folioFactura || "FAC"}-${String(idx + 1).padStart(2, "0")}`;
-            const excedePesoTarima = Number(bulto.pesoKg) > TARIMA_MAX_PESO_KG;
-            const excedeVolumenTarima = Number(bulto.volumenM3) > TARIMA_MAX_VOLUMEN_M3;
+            const dims = calcularDimensionesBulto(bulto.sku, bulto.piezas, productosProveedor);
+            const excedePesoTarima = dims.pesoKg > TARIMA_MAX_PESO_KG;
+            const excedeVolumenTarima = dims.volumenM3 > TARIMA_MAX_VOLUMEN_M3;
 
-            // Verificar si el SKU pertenece a la OC seleccionada
             const skuEnOC = ocActual?.lineas?.some(
               (l) => l.sku === bulto.sku && Number(l.sucursalId) === Number(bulto.sucursalId)
             );
@@ -226,16 +278,16 @@ export default function PackingListBuilder({
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-200">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="bg-slate-900 text-amber-400 font-mono font-extrabold text-xs px-2.5 py-1 rounded">
                       Bulto #{idx + 1}: {idBultoPreview}
                     </span>
-                    <span className="text-xs font-semibold text-slate-600">
-                      1 solo SKU por caja/tarima · Con etiqueta QR individual
+                    <span className="text-xs font-mono text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded">
+                      Fórmula: {bulto.piezas} pzas × ({dims.pesoUnitarioKg} kg | {dims.volumenUnitarioM3} m³)
                     </span>
                     {!skuEnOC && (
                       <span className="text-[10px] font-bold bg-red-100 text-red-800 px-2 py-0.5 rounded">
-                        Aviso: SKU/Sucursal no figura en la OC (Será rechazado en Handheld)
+                        Aviso: SKU/Sucursal no solicitado en esta OC (Será rechazado en Handheld)
                       </span>
                     )}
                   </div>
@@ -271,43 +323,37 @@ export default function PackingListBuilder({
 
                   <div>
                     <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                      SKU Único del Bulto
+                      Producto del Catálogo (SKU)
                     </label>
-                    <div className="flex gap-1">
-                      <input
-                        type="text"
-                        required
-                        list={`skus-oc-${idx}`}
-                        value={bulto.sku}
-                        onChange={(e) => actualizarBulto(idx, "sku", e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-mono font-bold"
-                      />
-                      <datalist id={`skus-oc-${idx}`}>
-                        {ocActual?.lineas?.map((l) => (
-                          <option key={l.id} value={l.sku}>
-                            {l.descripcion} (SUC-{String(l.sucursalId).padStart(2, "0")})
-                          </option>
-                        ))}
-                      </datalist>
-                    </div>
+                    <select
+                      value={bulto.sku}
+                      onChange={(e) => actualizarBulto(idx, "sku", e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-mono font-bold"
+                    >
+                      {productosProveedor.map((p) => (
+                        <option key={p.sku} value={p.sku}>
+                          {p.sku}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="md:col-span-2">
                     <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                      Descripción del Producto
+                      Descripción Oficial (Tabla Producto)
                     </label>
                     <input
                       type="text"
-                      required
+                      readOnly
+                      tabIndex={-1}
                       value={bulto.descripcion}
-                      onChange={(e) => actualizarBulto(idx, "descripcion", e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs"
+                      className="w-full bg-slate-200/70 border border-slate-300 rounded-lg px-2.5 py-2 text-xs text-slate-700 cursor-not-allowed select-none"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                      Piezas Surtidas
+                      Cantidad de Piezas
                     </label>
                     <input
                       type="number"
@@ -315,40 +361,36 @@ export default function PackingListBuilder({
                       required
                       value={bulto.piezas}
                       onChange={(e) => actualizarBulto(idx, "piezas", Number(e.target.value))}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold"
+                      className="w-full bg-white border-2 border-amber-400 rounded-lg px-2.5 py-2 text-xs font-extrabold"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                        Peso (kg)
+                        🔒 Peso Auto (kg)
                       </label>
                       <input
-                        type="number"
-                        step="0.1"
-                        min={0.1}
-                        required
-                        value={bulto.pesoKg}
-                        onChange={(e) => actualizarBulto(idx, "pesoKg", Number(e.target.value))}
-                        className={`w-full bg-white border rounded-lg px-2 py-2 text-xs font-bold ${
-                          excedePesoTarima ? "border-red-500 text-red-700" : "border-slate-300"
+                        type="text"
+                        readOnly
+                        tabIndex={-1}
+                        value={`${dims.pesoKg} kg`}
+                        className={`w-full bg-slate-200/80 border rounded-lg px-2 py-2 text-xs font-mono font-black cursor-not-allowed select-none ${
+                          excedePesoTarima ? "border-red-500 text-red-700" : "border-slate-300 text-slate-900"
                         }`}
                       />
                     </div>
                     <div>
                       <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                        Vol (m³)
+                        🔒 Vol Auto (m³)
                       </label>
                       <input
-                        type="number"
-                        step="0.01"
-                        min={0.01}
-                        required
-                        value={bulto.volumenM3}
-                        onChange={(e) => actualizarBulto(idx, "volumenM3", Number(e.target.value))}
-                        className={`w-full bg-white border rounded-lg px-2 py-2 text-xs font-bold ${
-                          excedeVolumenTarima ? "border-red-500 text-red-700" : "border-slate-300"
+                        type="text"
+                        readOnly
+                        tabIndex={-1}
+                        value={`${dims.volumenM3} m³`}
+                        className={`w-full bg-slate-200/80 border rounded-lg px-2 py-2 text-xs font-mono font-black cursor-not-allowed select-none ${
+                          excedeVolumenTarima ? "border-red-500 text-red-700" : "border-slate-300 text-slate-900"
                         }`}
                       />
                     </div>
@@ -357,8 +399,8 @@ export default function PackingListBuilder({
 
                 {(excedePesoTarima || excedeVolumenTarima) && (
                   <p className="text-[11px] font-bold text-amber-900 mt-2">
-                    ⚠️ Especificación de Tarima: Una tarima individual (1.12 × 1.15 × 1.85 m) soporta hasta{" "}
-                    {TARIMA_MAX_PESO_KG} kg y {TARIMA_MAX_VOLUMEN_M3} m³. Si este registro representa varias tarimas o un lote consolidado, divídelo o verifica su cubicación.
+                    ⚠️ Límite físico de Tarima: Una tarima estándar (1.12 × 1.15 × 1.85 m) soporta máximo{" "}
+                    {TARIMA_MAX_PESO_KG} kg y {TARIMA_MAX_VOLUMEN_M3} m³. Usa el botón &quot;Dividir en bultos&quot; arriba para repartir estas piezas en varias tarimas.
                   </p>
                 )}
               </div>
@@ -378,18 +420,18 @@ export default function PackingListBuilder({
               <span className="text-lg font-extrabold">{totalPiezas.toLocaleString()} pzas</span>
             </div>
             <div>
-              <span className="text-slate-400 block uppercase font-bold text-[10px]">Peso Total Factura</span>
-              <span className="text-lg font-extrabold">{totalPesoKg.toLocaleString()} kg</span>
+              <span className="text-slate-400 block uppercase font-bold text-[10px]">Peso Total Calculado</span>
+              <span className="text-lg font-extrabold text-emerald-400">{totalPesoKg.toFixed(2)} kg</span>
             </div>
             <div>
-              <span className="text-slate-400 block uppercase font-bold text-[10px]">Volumen Total Factura</span>
-              <span className="text-lg font-extrabold">{totalVolumenM3.toFixed(2)} m³</span>
+              <span className="text-slate-400 block uppercase font-bold text-[10px]">Volumen Total Calculado</span>
+              <span className="text-lg font-extrabold text-emerald-400">{totalVolumenM3.toFixed(3)} m³</span>
             </div>
           </div>
 
           <div className="text-right text-xs text-slate-300">
             <span className="inline-block bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded-full font-bold">
-              ✓ Film de Seguridad y Base de Tarima 1.12 × 1.15 m
+              ✓ Cálculo automático desde Catálogo Maestro Producto
             </span>
           </div>
         </div>

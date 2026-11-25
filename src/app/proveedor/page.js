@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import DockCalendar from "./components/DockCalendar";
-import PackingListBuilder from "./components/PackingListBuilder";
+import PackingListBuilder, { calcularDimensionesBulto } from "./components/PackingListBuilder";
 import QrLabelsSheet from "./components/QrLabelsSheet";
 import OcErpSimulator from "./components/OcErpSimulator";
 import ProveedorLogin from "./components/ProveedorLogin";
@@ -58,7 +58,6 @@ export default function ProveedorPage() {
   const [data, setData] = useState(null);
   const [vistaActiva, setVistaActiva] = useState("AGENDAR"); // "AGENDAR" | "SIMULADOR_OC" | "ETIQUETAS" | "CITAS"
 
-  // Estado del formulario de Momentos 1 y 2
   const [idOc, setIdOc] = useState("");
   const [folioFactura, setFolioFactura] = useState("");
   const [anden, setAnden] = useState(2);
@@ -72,7 +71,7 @@ export default function ProveedorPage() {
   const [error, setError] = useState(null);
   const [citaSeleccionadaQR, setCitaSeleccionadaQR] = useState(null);
 
-  const sincronizarConOc = (ocSeleccionada, todasLasCitas = []) => {
+  const sincronizarConOc = (ocSeleccionada, todasLasCitas = [], catalogoProductos = []) => {
     if (!ocSeleccionada) {
       setIdOc("");
       setFolioFactura("");
@@ -85,14 +84,17 @@ export default function ProveedorPage() {
 
     if (ocSeleccionada.lineas?.length > 0) {
       setBultosForm(
-        ocSeleccionada.lineas.map((l) => ({
-          sucursalId: l.sucursalId,
-          sku: l.sku,
-          descripcion: l.descripcion,
-          piezas: l.piezasPedidas,
-          pesoKg: Math.min(850, Math.max(40, l.piezasPedidas * 4)),
-          volumenM3: 1.4,
-        }))
+        ocSeleccionada.lineas.map((l) => {
+          const dims = calcularDimensionesBulto(l.sku, l.piezasPedidas, catalogoProductos);
+          return {
+            sucursalId: l.sucursalId,
+            sku: l.sku,
+            descripcion: l.descripcion,
+            piezas: l.piezasPedidas,
+            pesoKg: dims.pesoKg,
+            volumenM3: dims.volumenM3,
+          };
+        })
       );
     }
   };
@@ -104,7 +106,6 @@ export default function ProveedorPage() {
 
     if (!prov) return json;
 
-    // Filtrar exclusivamente las OCs y Citas que pertenecen al proveedor autenticado (idProveedor)
     const ocsDelProveedor = (json.ordenesCompra || []).filter(
       (oc) => Number(oc.idProveedor) === Number(prov.idProveedor)
     );
@@ -118,12 +119,11 @@ export default function ProveedorPage() {
       setCitaSeleccionadaQR(null);
     }
 
-    // Seleccionar la OC preferida o la primera OC disponible de este proveedor
     let ocTarget = idOcPreferida
       ? ocsDelProveedor.find((o) => o.idOc === idOcPreferida)
       : ocsDelProveedor.find((o) => !o.citaFactura) || ocsDelProveedor[0];
 
-    sincronizarConOc(ocTarget || null, json.citasFacturas || []);
+    sincronizarConOc(ocTarget || null, json.citasFacturas || [], json.productos || []);
     return json;
   };
 
@@ -166,19 +166,21 @@ export default function ProveedorPage() {
   if (verificandoSesion) {
     return (
       <div className="p-8 text-center text-sm text-slate-500 font-medium">
-        Verificando sesión segura del Portal de Proveedores...
+        Verificando sesión segura del Portal de Proveedores de Papelería...
       </div>
     );
   }
 
-  // Si no hay proveedor autenticado, mostrar pantalla de Login
   if (!proveedorActivo) {
     return <ProveedorLogin onLoginExitoso={handleLoginExitoso} />;
   }
 
-  // Filtrar estrictamente las Órdenes de Compra y Citas/Facturas de este proveedor (idProveedor)
+  // Filtrar estrictamente las Órdenes de Compra, Productos y Citas de este proveedor (idProveedor)
   const misOrdenesCompra = (data?.ordenesCompra || []).filter(
     (oc) => Number(oc.idProveedor) === Number(proveedorActivo.idProveedor)
+  );
+  const misProductos = (data?.productos || []).filter(
+    (p) => Number(p.idProveedor) === Number(proveedorActivo.idProveedor)
   );
   const misIdsOc = new Set(misOrdenesCompra.map((o) => o.idOc));
   const misCitasFacturas = (data?.citasFacturas || []).filter((c) => misIdsOc.has(c.idOc));
@@ -188,13 +190,13 @@ export default function ProveedorPage() {
   const handleCambiarOC = (nuevoIdOc) => {
     const nuevaOc = misOrdenesCompra.find((o) => o.idOc === nuevoIdOc);
     if (nuevaOc) {
-      sincronizarConOc(nuevaOc, data?.citasFacturas || []);
+      sincronizarConOc(nuevaOc, data?.citasFacturas || [], data?.productos || []);
     }
   };
 
   const handleOcNuevaCreada = async (nuevaOc) => {
     const json = await cargarDatos(proveedorActivo, nuevaOc.idOc);
-    sincronizarConOc(nuevaOc, json?.citasFacturas || []);
+    sincronizarConOc(nuevaOc, json?.citasFacturas || [], json?.productos || []);
     setMensaje(
       `Orden de Compra ${nuevaOc.idOc} emitida para tu cuenta (idProveedor #${proveedorActivo.idProveedor}). Folio Fiscal asignado: ${generarFolioFacturaRealUnico(
         nuevaOc,
@@ -204,7 +206,6 @@ export default function ProveedorPage() {
     setVistaActiva("AGENDAR");
   };
 
-  // Validaciones en tiempo real (contra todas las citas del CEDIS para evitar colisión de folio o andén)
   const folioDuplicado = data?.citasFacturas?.some(
     (c) => c.folioFactura.trim().toUpperCase() === folioFactura.trim().toUpperCase()
   );
@@ -294,7 +295,7 @@ export default function ProveedorPage() {
           <div>
             <p className="text-sm font-extrabold text-white">{proveedorActivo.nombre}</p>
             <p className="text-xs text-slate-400 font-mono">
-              {proveedorActivo.correo} · Mostrando exclusivamente tus {misOrdenesCompra.length} Órdenes de Compra
+              {proveedorActivo.correo} · {misProductos.length} Productos en Catálogo · {misOrdenesCompra.length} Órdenes de Compra
             </p>
           </div>
         </div>
@@ -308,27 +309,26 @@ export default function ProveedorPage() {
         </button>
       </div>
 
-      {/* Encabezado Industrial del Portal de Proveedores */}
+      {/* Encabezado Industrial del Portal de Proveedores de Papelería */}
       <div className="no-print bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded">
-                Módulo Proveedores · Momentos 1 y 2
+                CEDIS Papelería · Momentos 1 y 2
               </span>
               <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded">
                 4 Andenes de Recibo · Horario 08:00 a 18:00 hrs · Citas de 1h a 2h máx
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 mt-2">
-              Portal de Agendamiento de Citas, Facturación CFDI y Etiquetado QR
+              Portal de Proveedores: Citas, Facturación CFDI y Cubicación Automática
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              Visualiza únicamente las Órdenes de Compra adjudicadas a <strong>{proveedorActivo.nombre}</strong>, obtén tu Folio Fiscal Único autogenerado, reserva andén y descarga tus etiquetas QR.
+              Visualiza únicamente las Órdenes de Compra de <strong>{proveedorActivo.nombre}</strong>, con cálculo automático de peso y volumen desde tu catálogo de productos de papelería.
             </p>
           </div>
 
-          {/* Selector de Pestañas del Portal */}
           <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200 shrink-0">
             <button
               type="button"
@@ -380,7 +380,6 @@ export default function ProveedorPage() {
           </div>
         </div>
 
-        {/* Alertas Globales de Respuesta */}
         {error && (
           <div className="mt-4 p-4 rounded-xl bg-red-50 border-2 border-red-400 text-red-900 text-sm font-bold flex items-center justify-between">
             <span>⚠️ {error}</span>
@@ -404,10 +403,11 @@ export default function ProveedorPage() {
         )}
       </div>
 
-      {/* VISTA SIMULADOR ERP: EMISIÓN DE NUEVAS ÓRDENES DE COMPRA PARA EL PROVEEDOR ACTIVO */}
+      {/* VISTA SIMULADOR ERP: EMISIÓN DE NUEVAS ÓRDENES DE COMPRA USANDO LA TABLA PRODUCTO */}
       {vistaActiva === "SIMULADOR_OC" && (
         <OcErpSimulator
           proveedorActivo={proveedorActivo}
+          productosProveedor={misProductos}
           ordenesCompra={data?.ordenesCompra || []}
           sucursales={data?.sucursales || []}
           onOcCreada={handleOcNuevaCreada}
@@ -417,7 +417,6 @@ export default function ProveedorPage() {
       {/* VISTA 1: ASISTENTE DE AGENDAMIENTO + PARRILLA DE ANDENES + DESGLOSE DE BULTOS */}
       {vistaActiva === "AGENDAR" && (
         <form onSubmit={handleAgendar} className="space-y-6 no-print">
-          {/* PASO 1: Orden de Compra del Proveedor Activo y Folio Único de Factura Autogenerado */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -433,12 +432,11 @@ export default function ProveedorPage() {
                 onClick={() => setVistaActiva("SIMULADOR_OC")}
                 className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold px-3.5 py-2 rounded-lg transition shadow"
               >
-                + Simular Nueva OC para mi Proveedor
+                + Simular Nueva OC con mi Catálogo
               </button>
             </div>
 
             <div className="p-6 grid md:grid-cols-2 gap-6">
-              {/* Selector de OC filtrado estrictamente por el proveedor logueado */}
               <div className="space-y-2">
                 <label className="block text-xs font-extrabold uppercase text-slate-600">
                   1. Mis Órdenes de Compra Emitidas por el CEDIS ({misOrdenesCompra.length})
@@ -481,7 +479,6 @@ export default function ProveedorPage() {
                 )}
               </div>
 
-              {/* Campo Folio Fiscal de Factura Autogenerado y Bloqueado contra Teclado */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-extrabold uppercase text-slate-600">
@@ -500,20 +497,18 @@ export default function ProveedorPage() {
                     value={folioFactura}
                     onKeyDown={(e) => e.preventDefault()}
                     onPaste={(e) => e.preventDefault()}
-                    title="Folio fiscal generado automáticamente por el sistema para garantizar unicidad y formato oficial CFDI"
                     className="w-full border-2 border-slate-300 bg-slate-100 text-slate-900 rounded-xl px-3.5 py-2.5 text-sm font-mono font-black cursor-not-allowed select-none focus:outline-none"
                   />
                 </div>
 
                 <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg font-medium">
                   ✓ Formato fiscal real <strong>CFDI-[RFC]-[AÑO]-[CONSECUTIVO]</strong> asignado automáticamente a{" "}
-                  <strong>{proveedorActivo.nombre}</strong> sin posibilidad de duplicación ni alteración manual.
+                  <strong>{proveedorActivo.nombre}</strong>.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* PASO 2: Calendario Visual de los 4 Andenes (08:00 a 18:00, 1h a 2h máx) */}
           <DockCalendar
             fecha={fecha}
             setFecha={setFecha}
@@ -526,16 +521,15 @@ export default function ProveedorPage() {
             citasFacturas={data?.citasFacturas || []}
           />
 
-          {/* PASO 3: Desglose de Factura por Bulto (Packing List) */}
           <PackingListBuilder
             ocActual={ocActual}
+            productosProveedor={misProductos}
             sucursales={data?.sucursales || []}
             bultosForm={bultosForm}
             setBultosForm={setBultosForm}
             folioFactura={folioFactura}
           />
 
-          {/* Botón de Confirmación Final */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
             <div className="text-xs text-slate-600">
               <p className="font-bold text-slate-900 text-sm">
@@ -565,7 +559,6 @@ export default function ProveedorPage() {
         </form>
       )}
 
-      {/* VISTA 2: PLANCHA DE IMPRESIÓN DE ETIQUETAS QR DEL PROVEEDOR ACTIVO */}
       {vistaActiva === "ETIQUETAS" && (
         <QrLabelsSheet
           citasFacturas={misCitasFacturas}
@@ -575,7 +568,6 @@ export default function ProveedorPage() {
         />
       )}
 
-      {/* VISTA 3: BITÁCORA DE CITAS DEL PROVEEDOR ACTIVO */}
       {vistaActiva === "CITAS" && (
         <div className="no-print bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
