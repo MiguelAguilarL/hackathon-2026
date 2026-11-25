@@ -64,9 +64,13 @@ model CitaFactura {
   proveedor     String
   anden         Int
   fecha         String
-  horaInicio    Int
-  duracionHoras Int
+  horaInicio    Float
+  duracionHoras Float
   estado        String      @default("PROGRAMADA")
+
+  @@index([fecha, anden])
+  @@index([fecha, proveedor])
+
   ordenCompra   OrdenCompra @relation(fields: [idOc], references: [idOc])
   bultos        Bulto[]
 }

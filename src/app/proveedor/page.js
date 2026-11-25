@@ -7,6 +7,17 @@ import PackingListBuilder, { calcularDimensionesBulto } from "./components/Packi
 import QrLabelsSheet from "./components/QrLabelsSheet";
 import OcErpSimulator from "./components/OcErpSimulator";
 import ProveedorLogin from "./components/ProveedorLogin";
+import DuracionClock from "./components/DuracionClock";
+import BultosStatusPanel from "./components/BultosStatusPanel";
+import {
+  aMinutos,
+  formatearHora,
+  formatearDuracion,
+  conflictoHorario,
+  hayTraslape,
+  DURACION_MINIMA_MIN,
+  DURACION_MAXIMA_MIN,
+} from "@/lib/horarios";
 
 const PALABRAS_IGNORADAS = ["DE", "DEL", "LA", "LAS", "LOS", "EL", "Y", "E", "SA", "S.A.", "CV", "C.V.", "S.A"];
 
@@ -56,14 +67,14 @@ export default function ProveedorPage() {
   const [verificandoSesion, setVerificandoSesion] = useState(true);
 
   const [data, setData] = useState(null);
-  const [vistaActiva, setVistaActiva] = useState("AGENDAR"); // "AGENDAR" | "SIMULADOR_OC" | "ETIQUETAS" | "CITAS"
+  const [vistaActiva, setVistaActiva] = useState("AGENDAR"); // "AGENDAR" | "SIMULADOR_OC" | "ETIQUETAS" | "CITAS" | "BULTOS"
 
   const [idOc, setIdOc] = useState("");
   const [folioFactura, setFolioFactura] = useState("");
   const [anden, setAnden] = useState(2);
   const [fecha, setFecha] = useState("2026-11-25");
   const [horaInicio, setHoraInicio] = useState(11);
-  const [duracionHoras, setDuracionHoras] = useState(1);
+  const [duracionHoras, setDuracionHoras] = useState(1.5);
   const [bultosForm, setBultosForm] = useState([]);
 
   const [enviando, setEnviando] = useState(false);
@@ -211,15 +222,29 @@ export default function ProveedorPage() {
   );
   const ocYaTieneCita = Boolean(ocActual?.citaFactura);
 
+  const inicioCitaMin = aMinutos(horaInicio);
+  const finCitaMin = inicioCitaMin + aMinutos(duracionHoras);
   const citasDelDia = (data?.citasFacturas || []).filter((c) => c.fecha === fecha);
-  const hayTraslapeAnden = citasDelDia.some((c) => {
+  const rangoCita = (cita) => {
+    const inicio = aMinutos(cita.horaInicio);
+    return [inicio, inicio + aMinutos(cita.duracionHoras)];
+  };
+  const traslapeAnden = citasDelDia.find((c) => {
     if (Number(c.anden) !== Number(anden)) return false;
-    const finExistente = c.horaInicio + c.duracionHoras;
-    const finNueva = Number(horaInicio) + Number(duracionHoras);
-    return Number(horaInicio) < finExistente && finNueva > c.horaInicio;
+    const [ini, fin] = rangoCita(c);
+    return hayTraslape(inicioCitaMin, finCitaMin, ini, fin);
   });
+  const traslapeProveedor = citasDelDia.find((c) => {
+    if (c.proveedor !== proveedorActivo.nombre) return false;
+    const [ini, fin] = rangoCita(c);
+    return hayTraslape(inicioCitaMin, finCitaMin, ini, fin);
+  });
+  const errorAgenda = conflictoHorario(horaInicio, duracionHoras);
 
-  const duracionInvalida = duracionHoras < 1 || duracionHoras > 2 || horaInicio + duracionHoras > 18;
+  const duracionInvalida = (() => {
+    const minutos = aMinutos(duracionHoras);
+    return minutos < DURACION_MINIMA_MIN || minutos > DURACION_MAXIMA_MIN || finCitaMin > 18 * 60;
+  })();
 
   const handleAgendar = async (e) => {
     e.preventDefault();
@@ -231,8 +256,19 @@ export default function ProveedorPage() {
       return;
     }
 
-    if (duracionHoras < 1 || duracionHoras > 2) {
-      setError("La duración de la cita debe ser de mínimo 1 hora y máximo 2 horas.");
+    if (errorAgenda) {
+      setError(errorAgenda);
+      return;
+    }
+
+    if (traslapeAnden || traslapeProveedor) {
+      const cita = traslapeAnden || traslapeProveedor;
+      const [ini, fin] = rangoCita(cita);
+      setError(
+        traslapeAnden
+          ? `Andén #${anden} ocupado: ${cita.folioFactura} (${cita.proveedor}) de ${formatearHora(ini / 60)} a ${formatearHora(fin / 60)} hrs.`
+          : `${proveedorActivo.nombre} ya tiene una cita de ${formatearHora(ini / 60)} a ${formatearHora(fin / 60)} hrs en el Andén #${cita.anden}.`
+      );
       return;
     }
 
@@ -246,6 +282,34 @@ export default function ProveedorPage() {
     if (folioDuplicado) {
       setError(`El folio de factura "${folioFactura}" ya está registrado en el sistema y no se puede repetir.`);
       return;
+    }
+
+    if (bultosForm.length === 0 || bultosForm.some((b) => !Number(b.piezas) || Number(b.piezas) <= 0)) {
+      setError("Declara al menos un bulto con una cantidad de piezas válida antes de agendar.");
+      return;
+    }
+
+    // Validación final en el cliente: ninguna partida (SKU + sucursal) puede exceder la OC.
+    const piezasPorPartida = new Map();
+    for (const b of bultosForm) {
+      const clave = `${b.sku}::${Number(b.sucursalId)}`;
+      piezasPorPartida.set(clave, (piezasPorPartida.get(clave) || 0) + Number(b.piezas || 0));
+    }
+    for (const [clave, declaradas] of piezasPorPartida) {
+      const [sku, sucursalStr] = clave.split("::");
+      const linea = (ocActual.lineas || []).find(
+        (l) => l.sku === sku && Number(l.sucursalId) === Number(sucursalStr)
+      );
+      if (!linea) {
+        setError(`El SKU ${sku} para la sucursal ${sucursalStr} no fue solicitado en la OC ${idOc}.`);
+        return;
+      }
+      if (declaradas > linea.piezasPedidas) {
+        setError(
+          `Excedente no permitido: ${sku} (Sucursal ${sucursalStr}) tiene ${declaradas} pzas declaradas y la OC solo pide ${linea.piezasPedidas}.`
+        );
+        return;
+      }
     }
 
     setEnviando(true);
@@ -271,7 +335,7 @@ export default function ProveedorPage() {
         setError(json.error);
       } else {
         setMensaje(
-          `¡Cita confirmada en Andén #${anden} (${horaInicio}:00 a ${horaInicio + duracionHoras}:00 hrs)! Se registró tu Factura Fiscal ${json.cita.folioFactura} y se generaron ${json.cita.bultos.length} etiquetas QR.`
+          `¡Cita confirmada en Andén #${anden} (${formatearHora(horaInicio)} a ${formatearHora(horaInicio + duracionHoras)} hrs, ${formatearDuracion(duracionHoras)} de descarga)! Se registró tu Factura Fiscal ${json.cita.folioFactura} y se generaron ${json.cita.bultos.length} etiquetas QR.`
         );
         await cargarDatos(proveedorActivo, idOc);
         setCitaSeleccionadaQR(json.cita);
@@ -318,7 +382,7 @@ export default function ProveedorPage() {
                 CEDIS Papelería · Momentos 1 y 2
               </span>
               <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded">
-                4 Andenes de Recibo · Horario 08:00 a 18:00 hrs · Citas de 1h a 2h máx
+                4 Andenes de Recibo · Horario 08:00 a 18:00 hrs · Descarga de 1:00 a 2:00 hrs
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 mt-2">
@@ -362,7 +426,7 @@ export default function ProveedorPage() {
               }`}
             >
               <span>2. Mis Etiquetas QR</span>
-              <span className="bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded-full text-[10px] font-black">
+              <span className="bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded-full text-[10px] font-black">
                 {citaSeleccionadaQR?.bultos?.length || 0}
               </span>
             </button>
@@ -376,6 +440,20 @@ export default function ProveedorPage() {
               }`}
             >
               3. Mis Citas ({misCitasFacturas.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setVistaActiva("BULTOS")}
+              className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 ${
+                vistaActiva === "BULTOS"
+                  ? "bg-emerald-600 text-white shadow-sm"
+                  : "text-emerald-700 hover:bg-emerald-50"
+              }`}
+            >
+              <span>4. Estado de Bultos</span>
+              <span className="bg-emerald-100 text-emerald-900 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                {misCitasFacturas.reduce((total, cita) => total + (cita.bultos?.length || 0), 0)}
+              </span>
             </button>
           </div>
         </div>
@@ -521,6 +599,18 @@ export default function ProveedorPage() {
             citasFacturas={data?.citasFacturas || []}
           />
 
+          <div className="max-w-md">
+            <DuracionClock
+              duracionHoras={duracionHoras}
+              setDuracionHoras={setDuracionHoras}
+              horaInicio={horaInicio}
+              anden={anden}
+              fecha={fecha}
+              citasFacturas={data?.citasFacturas || []}
+              proveedorNombre={proveedorActivo.nombre}
+            />
+          </div>
+
           <PackingListBuilder
             ocActual={ocActual}
             productosProveedor={misProductos}
@@ -536,17 +626,33 @@ export default function ProveedorPage() {
                 Resumen antes de confirmar: {idOc} ({proveedorActivo.nombre}) → Factura Fiscal {folioFactura}
               </p>
               <p>
-                Andén #{anden} · Fecha {fecha} de {String(horaInicio).padStart(2, "0")}:00 a{" "}
-                {String(horaInicio + duracionHoras).padStart(2, "0")}:00 hrs ({duracionHoras}h) ·{" "}
+                Andén #{anden} · Fecha {fecha} de {formatearHora(horaInicio)} a{" "}
+                {formatearHora(horaInicio + duracionHoras)} hrs ({formatearDuracion(duracionHoras)} de descarga) ·{" "}
                 {bultosForm.length} etiquetas QR por generar.
               </p>
             </div>
 
             <button
               type="submit"
-              disabled={enviando || !ocActual || folioDuplicado || ocYaTieneCita || hayTraslapeAnden || duracionInvalida}
+              disabled={
+                enviando ||
+                !ocActual ||
+                folioDuplicado ||
+                ocYaTieneCita ||
+                Boolean(errorAgenda) ||
+                Boolean(traslapeAnden) ||
+                Boolean(traslapeProveedor) ||
+                duracionInvalida
+              }
               className={`px-6 py-3 rounded-xl font-extrabold text-sm transition shadow-md ${
-                enviando || !ocActual || folioDuplicado || ocYaTieneCita || hayTraslapeAnden || duracionInvalida
+                enviando ||
+                !ocActual ||
+                folioDuplicado ||
+                ocYaTieneCita ||
+                errorAgenda ||
+                traslapeAnden ||
+                traslapeProveedor ||
+                duracionInvalida
                   ? "bg-slate-300 text-slate-500 cursor-not-allowed"
                   : "bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer"
               }`}
@@ -601,8 +707,8 @@ export default function ProveedorPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <span className="text-[10px] font-black uppercase bg-slate-900 text-amber-400 px-2.5 py-0.5 rounded">
-                          ANDÉN #{cita.anden} · {cita.fecha} ({String(cita.horaInicio).padStart(2, "0")}:00 -{" "}
-                          {String(cita.horaInicio + cita.duracionHoras).padStart(2, "0")}:00 hrs)
+                          ANDÉN #{cita.anden} · {cita.fecha} ({formatearHora(cita.horaInicio)} –{" "}
+                          {formatearHora(cita.horaInicio + cita.duracionHoras)} · {formatearDuracion(cita.duracionHoras)})
                         </span>
                         <h3 className="text-base font-extrabold font-mono text-slate-900 mt-1.5">
                           Factura: {cita.folioFactura} · {cita.idOc}
@@ -630,6 +736,16 @@ export default function ProveedorPage() {
                         >
                           Ver Etiquetas QR
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCitaSeleccionadaQR(cita);
+                            setVistaActiva("BULTOS");
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg"
+                        >
+                          Ver estado de bultos
+                        </button>
                         <Link
                           href="/handheld"
                           className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg"
@@ -644,6 +760,16 @@ export default function ProveedorPage() {
             </div>
           )}
         </div>
+      )}
+
+      {vistaActiva === "BULTOS" && (
+        <BultosStatusPanel
+          citas={misCitasFacturas}
+          sucursales={data?.sucursales || []}
+          citaSeleccionada={citaSeleccionadaQR}
+          onSeleccionarCita={setCitaSeleccionadaQR}
+          onVerEtiquetas={() => setVistaActiva("ETIQUETAS")}
+        />
       )}
     </div>
   );

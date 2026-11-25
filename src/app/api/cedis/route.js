@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma, CEDIS_RULES } from "@/lib/prisma";
 import {
+<<<<<<< Updated upstream
   RACK_NIVELES,
   RACK_COLUMNAS,
   TARIMA_PESO_MAX_KG,
@@ -40,6 +41,21 @@ function metaRack() {
       modulosDobles: listarModulosDobles(),
     },
   };
+=======
+  aMinutos,
+  desdeMinutos,
+  formatearHora,
+  formatearDuracion,
+  conflictoHorario,
+  hayTraslape,
+} from "@/lib/horarios";
+
+class ErrorValidacion extends Error {
+  constructor(mensaje) {
+    super(mensaje);
+    this.status = 400;
+  }
+>>>>>>> Stashed changes
 }
 
 // GET /api/cedis -> Obtiene estado general (OCs con Proveedor, Catálogo de Productos, Citas/Facturas, Sucursales y Embarques)
@@ -122,63 +138,118 @@ export async function POST(request) {
     // MOMENTO 1 y 2: Agendar cita + Registrar Factura Única + Desglose de Bultos (con cálculo automático de peso y volumen desde Producto)
     if (action === "AGENDAR_CITA") {
       const { idOc, folioFactura, proveedor, anden, fecha, horaInicio, duracionHoras, bultos } = body;
+      const numeroAnden = Number(anden);
 
-      if (anden < 1 || anden > 4) {
-        return NextResponse.json({ error: "El andén de recibo debe ser entre 1 y 4." }, { status: 400 });
-      }
-      if (duracionHoras < 1 || duracionHoras > 2 || horaInicio < 8 || horaInicio + duracionHoras > 18) {
-        return NextResponse.json(
-          { error: "Horario inválido. Las citas son de 08:00 a 18:00 hrs con duración de 1 a 2 horas." },
-          { status: 400 }
-        );
+      if (!CEDIS_RULES.ANDENES_RECIBO.includes(numeroAnden)) {
+        throw new ErrorValidacion("El andén de recibo debe ser entre 1 y 4.");
       }
 
-      const facturaExistente = await prisma.citaFactura.findUnique({ where: { folioFactura } });
-      if (facturaExistente) {
-        return NextResponse.json(
-          { error: `El folio de factura ${folioFactura} ya está registrado. No se puede repetir.` },
-          { status: 400 }
-        );
+      const errorHorario = conflictoHorario(horaInicio, duracionHoras);
+      if (errorHorario) {
+        throw new ErrorValidacion(errorHorario);
       }
 
-      const citasAnden = await prisma.citaFactura.findMany({
-        where: { anden: Number(anden), fecha },
-      });
-      const finNueva = Number(horaInicio) + Number(duracionHoras);
-      const traslape = citasAnden.find((c) => {
-        const finExistente = c.horaInicio + c.duracionHoras;
-        return Number(horaInicio) < finExistente && finNueva > c.horaInicio;
-      });
-
-      if (traslape) {
-        return NextResponse.json(
-          {
-            error: `Traslape detectado en Andén ${anden}: ya existe la cita de ${traslape.folioFactura} de ${traslape.horaInicio}:00 a ${traslape.horaInicio + traslape.duracionHoras}:00.`,
-          },
-          { status: 400 }
-        );
-      }
+      const inicioMin = aMinutos(horaInicio);
+      const finMin = inicioMin + aMinutos(duracionHoras);
 
       const [ocDB, catalogoProductos] = await Promise.all([
         prisma.ordenCompra.findUnique({
           where: { idOc },
-          include: { proveedorRel: true },
+          include: { proveedorRel: true, lineas: true },
         }),
         prisma.producto.findMany(),
       ]);
 
-      const mapaProductos = new Map(catalogoProductos.map((p) => [p.sku, p]));
-      const nombreProveedorOficial = ocDB?.proveedorRel?.nombre || proveedor || "Proveedor Externo";
+      if (!ocDB) {
+        throw new ErrorValidacion(`La Orden de Compra ${idOc} no existe en el sistema.`);
+      }
 
-      const nuevaCita = await prisma.citaFactura.create({
-        data: {
-          idOc,
-          folioFactura,
-          proveedor: nombreProveedorOficial,
-          anden: Number(anden),
-          fecha,
-          horaInicio: Number(horaInicio),
-          duracionHoras: Number(duracionHoras),
+      const mapaProductos = new Map(catalogoProductos.map((p) => [p.sku, p]));
+      const nombreProveedorOficial = ocDB.proveedorRel?.nombre || proveedor || "Proveedor Externo";
+
+      // Cero tolerancia: agrupa los bultos por SKU + sucursal y verifica que la suma
+      // de piezas declaradas nunca supere lo solicitado en la Orden de Compra.
+      const piezasPorPartida = new Map();
+      for (const bulto of bultos || []) {
+        const sku = String(bulto.sku || "").trim();
+        const sucursalId = Number(bulto.sucursalId);
+        const piezas = Number(bulto.piezas);
+        if (!sku || !Number.isInteger(sucursalId) || !Number.isInteger(piezas) || piezas <= 0) {
+          throw new ErrorValidacion(
+            "Cada bulto debe indicar un SKU, una sucursal y una cantidad entera de piezas mayor a cero."
+          );
+        }
+        const clave = `${sku}::${sucursalId}`;
+        piezasPorPartida.set(clave, (piezasPorPartida.get(clave) || 0) + piezas);
+      }
+
+      for (const [clave, piezasDeclaradas] of piezasPorPartida) {
+        const [sku, sucursalStr] = clave.split("::");
+        const sucursalId = Number(sucursalStr);
+        const linea = ocDB.lineas.find(
+          (l) => l.sku === sku && Number(l.sucursalId) === sucursalId
+        );
+        if (!linea) {
+          throw new ErrorValidacion(
+            `El SKU ${sku} para la sucursal ${sucursalId} no fue solicitado en la OC ${idOc}.`
+          );
+        }
+        if (piezasDeclaradas > linea.piezasPedidas) {
+          throw new ErrorValidacion(
+            `Excedente no permitido en ${sku} (Sucursal ${sucursalId}): la OC pide ${linea.piezasPedidas} piezas y declaraste ${piezasDeclaradas}. Reduce la cantidad antes de agendar.`
+          );
+        }
+      }
+
+      // Validación y escritura en una sola transacción: dos proveedores no pueden
+      // tomar el mismo andén (ni el mismo proveedor dos andenes) en el mismo rango.
+      const nuevaCita = await prisma.$transaction(async (tx) => {
+        const facturaExistente = await tx.citaFactura.findUnique({ where: { folioFactura } });
+        if (facturaExistente) {
+          throw new ErrorValidacion(
+            `El folio de factura ${folioFactura} ya está registrado. No se puede repetir.`
+          );
+        }
+
+        const citasDelDia = await tx.citaFactura.findMany({ where: { fecha } });
+        const rangoDe = (cita) => {
+          const inicio = aMinutos(cita.horaInicio);
+          return [inicio, inicio + aMinutos(cita.duracionHoras)];
+        };
+
+        const traslapeAnden = citasDelDia.find((cita) => {
+          if (Number(cita.anden) !== numeroAnden) return false;
+          const [inicio, fin] = rangoDe(cita);
+          return hayTraslape(inicioMin, finMin, inicio, fin);
+        });
+        if (traslapeAnden) {
+          const [inicio, fin] = rangoDe(traslapeAnden);
+          throw new ErrorValidacion(
+            `Andén ${numeroAnden} ocupado: ${traslapeAnden.folioFactura} (${traslapeAnden.proveedor}) de ${formatearHora(desdeMinutos(inicio))} a ${formatearHora(desdeMinutos(fin))}.`
+          );
+        }
+
+        const traslapeProveedor = citasDelDia.find((cita) => {
+          if (cita.proveedor !== nombreProveedorOficial) return false;
+          const [inicio, fin] = rangoDe(cita);
+          return hayTraslape(inicioMin, finMin, inicio, fin);
+        });
+        if (traslapeProveedor) {
+          const [inicio, fin] = rangoDe(traslapeProveedor);
+          throw new ErrorValidacion(
+            `${nombreProveedorOficial} ya tiene una cita de ${formatearHora(desdeMinutos(inicio))} a ${formatearHora(desdeMinutos(fin))} en el Andén #${traslapeProveedor.anden}.`
+          );
+        }
+
+        return tx.citaFactura.create({
+          data: {
+            idOc,
+            folioFactura,
+            proveedor: nombreProveedorOficial,
+            anden: numeroAnden,
+            fecha,
+            horaInicio: desdeMinutos(inicioMin),
+            duracionHoras: desdeMinutos(finMin - inicioMin),
           bultos: {
             create: (bultos || []).map((b, idx) => {
               const prod = mapaProductos.get(b.sku);
@@ -205,6 +276,7 @@ export async function POST(request) {
           },
         },
         include: { bultos: true },
+        });
       });
 
       return NextResponse.json({ ok: true, cita: nuevaCita });
@@ -445,6 +517,6 @@ export async function POST(request) {
 
     return NextResponse.json({ error: "Acción no reconocida" }, { status: 400 });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: error.status || 500 });
   }
 }

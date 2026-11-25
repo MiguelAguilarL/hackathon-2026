@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { formatearHora, formatearDuracion } from "@/lib/horarios";
 
 export default function QrLabelsSheet({
   citasFacturas = [],
@@ -102,8 +103,9 @@ export default function QrLabelsSheet({
           </span>
           <span>
             <strong>Cita:</strong> {citaSeleccionadaQR.fecha} en <strong>Andén #{citaSeleccionadaQR.anden}</strong> (
-            {String(citaSeleccionadaQR.horaInicio).padStart(2, "0")}:00 a{" "}
-            {String(citaSeleccionadaQR.horaInicio + citaSeleccionadaQR.duracionHoras).padStart(2, "0")}:00 hrs)
+            {formatearHora(citaSeleccionadaQR.horaInicio)} a{" "}
+            {formatearHora(citaSeleccionadaQR.horaInicio + citaSeleccionadaQR.duracionHoras)} hrs ·{" "}
+            {formatearDuracion(citaSeleccionadaQR.duracionHoras)} de descarga)
           </span>
         </div>
         <span className="font-mono text-[11px] text-emerald-700 font-bold">

@@ -35,10 +35,34 @@ export default function PackingListBuilder({
   folioFactura,
 }) {
   const [cajasPorLinea, setCajasPorLinea] = useState(2);
+  const [aviso, setAviso] = useState(null);
+
+  const lineasOC = ocActual?.lineas || [];
+  const buscarLinea = (sku, sucursalId) =>
+    lineasOC.find((l) => l.sku === sku && Number(l.sucursalId) === Number(sucursalId));
+
+  // Piezas ya declaradas para una misma partida (SKU + sucursal), excluyendo un bulto
+  // cuando se está validando su propio valor.
+  const declaradasEn = (sku, sucursalId, excluirIdx = -1) =>
+    bultosForm.reduce(
+      (acc, b, idx) =>
+        idx !== excluirIdx && b.sku === sku && Number(b.sucursalId) === Number(sucursalId)
+          ? acc + Number(b.piezas || 0)
+          : acc,
+      0
+    );
+
+  const disponiblesPara = (sku, sucursalId, excluirIdx = -1) => {
+    const linea = buscarLinea(sku, sucursalId);
+    return linea ? Math.max(0, linea.piezasPedidas - declaradasEn(sku, sucursalId, excluirIdx)) : null;
+  };
+
+  const etiquetaPartida = (sku, sucursalId) => `${sku} / SUC-${String(sucursalId).padStart(2, "0")}`;
 
   // Importa todas las líneas de la Orden de Compra calculando peso y volumen desde la tabla Producto
   const importarLineasDeOC = () => {
     if (!ocActual?.lineas?.length) return;
+    setAviso(null);
     const nuevosBultos = ocActual.lineas.map((linea) => {
       const dims = calcularDimensionesBulto(linea.sku, linea.piezasPedidas, productosProveedor);
       return {
@@ -55,7 +79,9 @@ export default function PackingListBuilder({
 
   // Divide una línea de la OC en N bultos del mismo SKU recalculando automáticamente el peso y volumen
   const dividirLineaEnBultos = (linea, numBultos) => {
-    const n = Math.max(1, Number(numBultos) || 1);
+    // Nunca se pueden generar más bultos que piezas pedidas (evita piezas de 0 o fantasma).
+    const n = Math.min(linea.piezasPedidas, Math.max(1, Number(numBultos) || 1));
+    setAviso(null);
     const piezasBase = Math.floor(linea.piezasPedidas / n);
     const resto = linea.piezasPedidas % n;
 
@@ -80,18 +106,30 @@ export default function PackingListBuilder({
   };
 
   const agregarBultoIndividual = () => {
-    const primeraLinea = ocActual?.lineas?.[0];
-    const prodDefault = productosProveedor.find((p) => p.sku === primeraLinea?.sku) || productosProveedor[0];
-    const skuInicial = primeraLinea?.sku || prodDefault?.sku || "PAP-BOND-CARTA";
-    const piezasIniciales = 20;
-    const dims = calcularDimensionesBulto(skuInicial, piezasIniciales, productosProveedor);
+    const primeraLinea = lineasOC[0];
+    // Se agrega el bulto a la primera partida que aún tenga piezas disponibles.
+    const lineaDisponible = lineasOC.find((l) => disponiblesPara(l.sku, l.sucursalId) > 0);
+    if (!lineaDisponible) {
+      setAviso(
+        ocActual?.idOc
+          ? `Todas las partidas de la OC ${ocActual.idOc} ya están completas. No puedes declarar más piezas de las solicitadas.`
+          : "Selecciona una Orden de Compra para agregar bultos."
+      );
+      return;
+    }
 
+    const disponibles = disponiblesPara(lineaDisponible.sku, lineaDisponible.sucursalId);
+    const piezasIniciales = Math.min(20, disponibles);
+    const prodDefault = productosProveedor.find((p) => p.sku === lineaDisponible.sku) || productosProveedor[0];
+    const dims = calcularDimensionesBulto(lineaDisponible.sku, piezasIniciales, productosProveedor);
+
+    setAviso(null);
     setBultosForm([
       ...bultosForm,
       {
-        sucursalId: primeraLinea?.sucursalId || 1,
-        sku: skuInicial,
-        descripcion: primeraLinea?.descripcion || prodDefault?.descripcion || "Artículo de Papelería",
+        sucursalId: lineaDisponible.sucursalId,
+        sku: lineaDisponible.sku,
+        descripcion: lineaDisponible.descripcion || prodDefault?.descripcion || "Artículo de Papelería",
         piezas: piezasIniciales,
         pesoKg: dims.pesoKg,
         volumenM3: dims.volumenM3,
@@ -111,7 +149,7 @@ export default function PackingListBuilder({
     // Si cambia el SKU, actualizar descripción desde catálogo Producto o línea OC
     if (campo === "sku") {
       const prodCatalogo = productosProveedor.find((p) => p.sku === valor);
-      const lineaMatch = ocActual?.lineas?.find((l) => l.sku === valor);
+      const lineaMatch = buscarLinea(valor, copia[index].sucursalId) || lineasOC.find((l) => l.sku === valor);
       if (prodCatalogo) {
         actual.descripcion = prodCatalogo.descripcion;
       } else if (lineaMatch) {
@@ -119,6 +157,52 @@ export default function PackingListBuilder({
       }
       if (lineaMatch) {
         actual.sucursalId = lineaMatch.sucursalId;
+      }
+    }
+
+    // Regla de oro: la suma de piezas por SKU + sucursal nunca puede superar lo pedido en la OC.
+    if (campo === "piezas") {
+      const cantidad = Math.max(1, Math.floor(Number(valor) || 1));
+      const disponibles = disponiblesPara(actual.sku, actual.sucursalId, index);
+      if (disponibles === null) {
+        setAviso(
+          `${etiquetaPartida(actual.sku, actual.sucursalId)} no está solicitado en la OC; este bulto será rechazado en el handheld.`
+        );
+        actual.piezas = cantidad;
+      } else if (cantidad > disponibles) {
+        if (disponibles < 1) {
+          setAviso(
+            `No quedan piezas disponibles para ${etiquetaPartida(actual.sku, actual.sucursalId)}. Reduce la cantidad en otros bultos de la misma partida.`
+          );
+          return;
+        }
+        const pedidas = buscarLinea(actual.sku, actual.sucursalId).piezasPedidas;
+        setAviso(
+          `Máximo ${disponibles} pzas para ${etiquetaPartida(actual.sku, actual.sucursalId)} ` +
+            `(OC pide ${pedidas}, ya declaradas ${pedidas - disponibles}). Se ajustó a ${disponibles}.`
+        );
+        actual.piezas = disponibles;
+      } else {
+        setAviso(null);
+        actual.piezas = cantidad;
+      }
+    }
+
+    // Mover un bulto a otra partida también debe respetar el tope de esa partida.
+    if (campo === "sku" || campo === "sucursalId") {
+      const disponibles = disponiblesPara(actual.sku, actual.sucursalId, index);
+      if (disponibles !== null) {
+        if (Number(actual.piezas) > disponibles) {
+          setAviso(
+            `No puedes mover ${actual.piezas} pzas a ${etiquetaPartida(actual.sku, actual.sucursalId)}: solo quedan ${disponibles} disponibles.`
+          );
+          return;
+        }
+        setAviso(null);
+      } else {
+        setAviso(
+          `${etiquetaPartida(actual.sku, actual.sucursalId)} no está solicitado en la OC; este bulto será rechazado en el handheld.`
+        );
       }
     }
 
@@ -134,6 +218,9 @@ export default function PackingListBuilder({
   };
 
   const totalPiezas = bultosForm.reduce((acc, b) => acc + Number(b.piezas || 0), 0);
+  const hayExcedente = lineasOC.some(
+    (linea) => declaradasEn(linea.sku, linea.sucursalId) > linea.piezasPedidas
+  );
   const totalPesoKg = bultosForm.reduce((acc, b) => acc + Number(b.pesoKg || 0), 0);
   const totalVolumenM3 = bultosForm.reduce((acc, b) => acc + Number(b.volumenM3 || 0), 0);
 
@@ -172,6 +259,12 @@ export default function PackingListBuilder({
       </div>
 
       <div className="p-6 space-y-6">
+        {aviso && (
+          <div role="alert" className="bg-red-50 border border-red-300 text-red-900 text-xs font-bold px-3.5 py-2.5 rounded-xl">
+            ⚠️ {aviso}
+          </div>
+        )}
+
         {/* Espejo de la Orden de Compra */}
         {ocActual?.lineas?.length > 0 && (
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
@@ -267,6 +360,8 @@ export default function PackingListBuilder({
             const skuEnOC = ocActual?.lineas?.some(
               (l) => l.sku === bulto.sku && Number(l.sucursalId) === Number(bulto.sucursalId)
             );
+            const disponiblesBulto = disponiblesPara(bulto.sku, bulto.sucursalId, idx);
+            const sinDisponibilidad = disponiblesBulto !== null && disponiblesBulto < 1;
 
             return (
               <div
@@ -358,11 +453,20 @@ export default function PackingListBuilder({
                     <input
                       type="number"
                       min={1}
+                      max={disponiblesBulto !== null ? Math.max(1, disponiblesBulto) : undefined}
                       required
                       value={bulto.piezas}
                       onChange={(e) => actualizarBulto(idx, "piezas", Number(e.target.value))}
-                      className="w-full bg-white border-2 border-amber-400 rounded-lg px-2.5 py-2 text-xs font-extrabold"
+                      aria-label={`Piezas del bulto ${idx + 1} de ${etiquetaPartida(bulto.sku, bulto.sucursalId)}`}
+                      className={`w-full bg-white border-2 rounded-lg px-2.5 py-2 text-xs font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                        sinDisponibilidad ? "border-red-500 text-red-800" : "border-amber-400"
+                      }`}
                     />
+                    {disponiblesBulto !== null && (
+                      <p className={`text-[9px] font-bold mt-1 ${sinDisponibilidad ? "text-red-700" : "text-slate-500"}`}>
+                        Tope OC: {disponiblesBulto} pzas disponibles
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -429,10 +533,16 @@ export default function PackingListBuilder({
             </div>
           </div>
 
-          <div className="text-right text-xs text-slate-300">
-            <span className="inline-block bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded-full font-bold">
-              ✓ Cálculo automático desde Catálogo Maestro Producto
-            </span>
+          <div className="text-right text-xs text-slate-300 flex flex-wrap justify-end gap-2">
+            {hayExcedente ? (
+              <span className="inline-block bg-red-500/20 border border-red-500/40 text-red-300 px-3 py-1 rounded-full font-bold">
+                ✕ Excedente vs OC · ajusta las piezas antes de agendar
+              </span>
+            ) : (
+              <span className="inline-block bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded-full font-bold">
+                ✓ Piezas dentro de lo solicitado en la OC
+              </span>
+            )}
           </div>
         </div>
       </div>

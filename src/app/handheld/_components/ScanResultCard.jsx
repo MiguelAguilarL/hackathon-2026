@@ -1,15 +1,5 @@
 "use client";
 
-function Campo({ etiqueta, valor }) {
-  if (!valor) return null;
-  return (
-    <div className="min-w-0">
-      <p className="text-[10px] font-bold uppercase tracking-wider opacity-70">{etiqueta}</p>
-      <p className="font-mono text-sm font-bold truncate">{valor}</p>
-    </div>
-  );
-}
-
 function Icono({ tipo }) {
   const comun = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.4, className: "w-7 h-7" };
   if (tipo === "ok") {
@@ -45,7 +35,85 @@ function BloqueContenido({ contenido }) {
   );
 }
 
-export default function ScanResultCard({ estado, resultado, payload, bulto, contenido }) {
+function BotonEscanearOtro({ onClick, rechazado = false }) {
+  if (typeof onClick !== "function") return null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`mt-3 inline-flex min-h-[44px] items-center gap-2 rounded-lg px-3.5 text-xs font-extrabold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+        rechazado
+          ? "bg-red-700 text-white hover:bg-red-800 focus-visible:ring-red-500"
+          : "bg-slate-900 text-white hover:bg-slate-800 focus-visible:ring-slate-700"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-4 h-4">
+        <path
+          d="M4 7V5a2 2 0 0 1 2-2h2M16 3h2a2 2 0 0 1 2 2v2M20 17v2a2 2 0 0 1-2 2h-2M8 21H6a2 2 0 0 1-2-2v-2M7 12h10"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      Escanear otro QR
+    </button>
+  );
+}
+
+// Muestra literalmente los campos de la etiqueta CEDIS (idBulto, idOc, folioFactura,
+// proveedor, sucursalId, sku y piezas) y, cuando existe, la información enriquecida
+// que devuelve la API (rack, nombre de sucursal, peso y volumen).
+function DatosEtiquetaQR({ datos, bulto }) {
+  const piezas = datos?.piezas === undefined || datos?.piezas === null ? null : `${datos.piezas} pzas`;
+  const campos = [
+    ["ID de bulto", datos?.idBulto],
+    ["Orden de compra", datos?.idOc],
+    ["Folio de factura", datos?.folioFactura],
+    ["Proveedor", datos?.proveedor],
+    ["Sucursal destino (ID)", datos?.sucursalId],
+    ["SKU", datos?.sku],
+    ["Piezas", piezas],
+  ];
+  const visibles = campos.filter(([, valor]) => valor !== undefined && valor !== null && valor !== "");
+  if (visibles.length === 0) return null;
+
+  const extras = [
+    ["Rack destino", bulto?.sucursal?.rackAsignado],
+    ["Sucursal", bulto?.sucursal?.nombre],
+    ["Peso", bulto?.pesoKg ? `${bulto.pesoKg} kg` : null],
+    ["Volumen", bulto?.volumenM3 ? `${bulto.volumenM3} m³` : null],
+  ].filter(([, valor]) => valor);
+
+  return (
+    <div className="mt-2.5 rounded-lg bg-white/70 ring-1 ring-current/15 p-2.5">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <p className="text-[10px] font-black uppercase tracking-wider opacity-75">
+          Datos leídos de la etiqueta QR
+        </p>
+        <span className="text-[9px] font-bold uppercase opacity-60">{visibles.length}/7 campos</span>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        {visibles.map(([etiqueta, valor]) => (
+          <div key={etiqueta} className="min-w-0">
+            <dt className="text-[9px] font-bold uppercase tracking-wide opacity-60">{etiqueta}</dt>
+            <dd className="font-mono text-[11px] font-bold break-words leading-tight">{valor}</dd>
+          </div>
+        ))}
+      </dl>
+      {extras.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-current/15 grid grid-cols-2 gap-x-3 gap-y-1.5">
+          {extras.map(([etiqueta, valor]) => (
+            <div key={etiqueta} className="min-w-0">
+              <p className="text-[9px] font-bold uppercase tracking-wide opacity-60">{etiqueta}</p>
+              <p className="font-mono text-[11px] font-bold break-words leading-tight">{valor}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ScanResultCard({ estado, resultado, payload, bulto, contenido, onEscanearOtro }) {
   if (estado === "IDLE") {
     return (
       <div className="px-5 py-3 bg-white border-b border-slate-200">
@@ -71,7 +139,9 @@ export default function ScanResultCard({ estado, resultado, payload, bulto, cont
             <p className="text-sm font-bold text-sky-950 mt-0.5">
               {resultado?.motivo || "Este QR no es una etiqueta CEDIS. Aquí está lo que contiene:"}
             </p>
+            <DatosEtiquetaQR datos={resultado?.campos} />
             <BloqueContenido contenido={resultado?.contenido || contenido} />
+            <BotonEscanearOtro onClick={onEscanearOtro} />
           </div>
         </div>
       </div>
@@ -85,9 +155,10 @@ export default function ScanResultCard({ estado, resultado, payload, bulto, cont
           <span className="text-sky-700">
             <Icono tipo="cargando" />
           </span>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-extrabold text-sky-900">Validando bulto…</p>
             <p className="font-mono text-xs text-sky-800 truncate">{payload?.idBulto}</p>
+            <DatosEtiquetaQR datos={payload} />
           </div>
         </div>
       </div>
@@ -95,7 +166,6 @@ export default function ScanResultCard({ estado, resultado, payload, bulto, cont
   }
 
   const rechazado = estado === "RECHAZADO";
-  const sucursal = bulto?.sucursal;
 
   return (
     <div
@@ -122,33 +192,19 @@ export default function ScanResultCard({ estado, resultado, payload, bulto, cont
               <span className="inline-flex items-center gap-1 mt-1.5 rounded-full bg-emerald-100 ring-1 ring-emerald-300 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-800">
                 ✓ En orden de compra
               </span>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-2.5">
-                <Campo etiqueta="SKU" valor={payload?.sku} />
-                <Campo etiqueta="Piezas" valor={`${payload?.piezas ?? 0} pzas`} />
-                <Campo etiqueta="Rack destino" valor={sucursal?.rackAsignado} />
-                <Campo etiqueta="Sucursal" valor={sucursal?.nombre} />
-                <Campo etiqueta="Orden de compra" valor={payload?.idOc} />
-                <Campo etiqueta="Factura" valor={payload?.folioFactura} />
-                <Campo etiqueta="Peso" valor={bulto?.pesoKg ? `${bulto.pesoKg} kg` : null} />
-                <Campo etiqueta="Volumen" valor={bulto?.volumenM3 ? `${bulto.volumenM3} m³` : null} />
-              </div>
+              <DatosEtiquetaQR datos={payload} bulto={bulto} />
               <BloqueContenido contenido={contenido} />
             </>
           )}
 
           {rechazado && (
             <>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="bg-white/80 ring-1 ring-red-200 rounded px-2 py-1 font-mono text-[11px] font-bold text-red-900">
-                  {payload?.idBulto || "Bulto sin identificador"}
-                </span>
-                <span className="bg-white/80 ring-1 ring-red-200 rounded px-2 py-1 font-mono text-[11px] font-bold text-red-900">
-                  {payload?.sku || "SKU no leído"}
-                </span>
-              </div>
+              <DatosEtiquetaQR datos={payload || resultado?.campos} />
               <BloqueContenido contenido={contenido} />
             </>
           )}
+
+          <BotonEscanearOtro onClick={onEscanearOtro} rechazado={rechazado} />
         </div>
       </div>
     </div>

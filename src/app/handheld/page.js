@@ -7,6 +7,7 @@ import ScanResultCard from "./_components/ScanResultCard";
 import TruckProgressCard from "./_components/TruckProgressCard";
 import ManualInputBar from "./_components/ManualInputBar";
 import IncidentSheet from "./_components/IncidentSheet";
+import EstadoBultosCard from "./_components/EstadoBultosCard";
 import { useHandheldScan } from "./_hooks/useHandheldScan";
 
 export default function HandheldPage() {
@@ -94,7 +95,11 @@ export default function HandheldPage() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className="w-5 h-5">
           <path d="m5 13 4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        {estado === "RECHAZADO" ? "Entendido" : estado === "LEIDO" ? "Siguiente lectura" : "Siguiente bulto"}
+        {estado === "RECHAZADO"
+          ? "Entendido, escanear otro"
+          : estado === "LEIDO"
+          ? "Escanear otro QR"
+          : "Escanear otro bulto"}
       </button>
     </footer>
   );
@@ -132,7 +137,10 @@ export default function HandheldPage() {
           payload={payload}
           bulto={bultoLeido}
           contenido={contenidoQR}
+          onEscanearOtro={reiniciar}
         />
+
+        <EstadoBultosCard cita={citaActiva} bultos={data?.bultos || []} />
 
         <TruckProgressCard
           cita={citaActiva}
