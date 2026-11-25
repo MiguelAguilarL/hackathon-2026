@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Terminal de Recibo - Andén 01</title>
+<!-- Tailwind CSS CDN con plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts para tipografía industrial moderna -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            industrial: {
+              50: '#F8FAFC',
+              100: '#F1F5F9',
+              200: '#E2E8F0',
+              800: '#1E293B',
+              900: '#0F172A',
+              amber: '#F59E0B',
+              accent: '#0284C7'
+            }
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Custom Styles -->
+<style data-purpose="custom-layout">
+    body {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    /* Estilos del láser escáner animado */
+    @keyframes scanMove {
+      0% { top: 12%; opacity: 0.8; }
+      50% { top: 84%; opacity: 1; }
+      100% { top: 12%; opacity: 0.8; }
+    }
+    .scan-laser {
+      animation: scanMove 2.4s ease-in-out infinite;
+    }
+  </style>
+<!-- END: Custom Styles -->
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen flex items-center justify-center p-0 sm:p-4">
+<!-- BEGIN: Mobile Device Frame -->
+<main class="w-full max-w-md h-screen sm:h-[844px] bg-white sm:rounded-[36px] shadow-2xl flex flex-col justify-between overflow-hidden border border-slate-200 relative" data-purpose="mobile-container">
+<!-- BEGIN: Top Bar & Header -->
+<header class="pt-5 pb-3 px-6 bg-white border-b border-slate-100 z-10">
+<!-- Barra de estado simulada iOS -->
+<div class="flex justify-between items-center text-xs text-slate-400 font-medium mb-3">
+<span class="tracking-tight font-semibold text-slate-700">09:41</span>
+<div class="flex items-center space-x-1.5">
+<!-- Señal de red -->
+<svg class="w-3.5 h-3.5 text-slate-600" fill="currentColor" viewbox="0 0 20 20">
+<path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path>
+</svg>
+<span class="text-[11px] font-bold text-slate-600">5G</span>
+<!-- Batería -->
+<div class="w-5 h-2.5 border border-slate-500 rounded-sm p-0.5 flex items-center">
+<div class="w-full h-full bg-slate-700 rounded-xs"></div>
+</div>
+</div>
+</div>
+<!-- Título de pantalla según boceto: "Anden 01 recibe" y linterna a la derecha -->
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-2">
+<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+<h1 class="text-xl font-bold tracking-tight text-slate-900 capitalize">
+            Andén 01 recibe
+          </h1>
+</div>
+<!-- Linterna superior derecha dibujada en el boceto -->
+<button aria-label="Activar linterna" class="p-2.5 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 transition-all text-slate-700" data-purpose="toggle-torch" id="torch-btn" type="button">
+<svg class="w-5 h-5 text-slate-700" fill="none" id="torch-icon" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<!-- Icono de Linterna dibujada -->
+<path d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M14.25 3.104v5.714a2.25 2.25 0 00.659 1.591L19 14.5M6 14.5h12v4.25a2.25 2.25 0 01-2.25 2.25h-7.5A2.25 2.25 0 016 18.75V14.5z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+</header>
+<!-- END: Top Bar & Header -->
+<!-- BEGIN: Scanner Section -->
+<section class="relative flex-1 flex flex-col items-center justify-center p-4 bg-slate-950 overflow-hidden" data-purpose="qr-viewfinder">
+<!-- Simulación de cámara con cuadrícula tenue -->
+<div class="absolute inset-0 opacity-15 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:16px_16px]"></div>
+<!-- Contenedor del visor QR (Marco con 4 esquinas del boceto) -->
+<div class="relative w-64 h-64 flex items-center justify-center">
+<!-- Esquina Superior Izquierda -->
+<div class="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-white rounded-tl-lg"></div>
+<!-- Esquina Superior Derecha -->
+<div class="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-white rounded-tr-lg"></div>
+<!-- Esquina Inferior Izquierda -->
+<div class="absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 border-white rounded-bl-lg"></div>
+<!-- Esquina Inferior Derecha -->
+<div class="absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 border-white rounded-br-lg"></div>
+<!-- Línea animada de escaneo -->
+<div class="scan-laser absolute left-4 right-4 h-0.5 bg-red-500 shadow-[0_0_12px_#ef4444]"></div>
+<!-- Letras centrales QR del boceto a mano -->
+<div class="flex flex-col items-center justify-center select-none opacity-90">
+<span class="text-4xl font-extrabold tracking-widest text-white/90 font-mono">QR</span>
+<span class="text-[11px] font-medium text-slate-400 mt-2 uppercase tracking-wider">Apunta al código</span>
+</div>
+</div>
+<!-- Indicador de enfoque óptico -->
+<p class="text-xs text-slate-400 mt-5 font-mono tracking-tight bg-slate-900/80 px-3 py-1 rounded-full border border-slate-800">
+        Sensor activo • Enfoque continuo
+      </p>
+</section>
+<!-- END: Scanner Section -->
+<!-- BEGIN: Scanned Content Info ("Contenido:") -->
+<section class="px-6 py-4 bg-white border-t border-slate-200" data-purpose="content-details"><div class="space-y-2.5"><div class="bg-blue-50 border border-blue-200 rounded-lg p-2.5 flex items-start justify-between"><div class="flex items-start gap-2"><span class="material-symbols-outlined text-blue-600 text-lg leading-none mt-0.5">warehouse</span><div><span class="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">Ubicación Recomendada</span><p class="text-xs font-bold text-slate-900">Rack #08 <span class="text-blue-600 font-semibold">• Bahía 01 (Embarque Sur)</span></p><p class="text-[11px] text-slate-600 font-medium mt-0.5">Destino: <strong class="text-slate-800">Sucursal 08 - Zapopan (JAL)</strong></p></div></div><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300"><span class="material-symbols-outlined text-xs">verified</span> OC-78225</span></div><div><div class="flex items-center justify-between mb-1"><span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Contenido</span><span class="text-[11px] font-mono font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">✓ En Orden de Compra</span></div><p class="text-base font-bold text-slate-900 leading-snug">48 piezas de Aceite Vegetal 1L</p><div class="flex flex-wrap items-center gap-1.5 pt-1.5 text-xs text-slate-600 font-mono"><span class="bg-slate-100 px-2 py-0.5 rounded font-semibold text-slate-800">SKU: 7501020492</span><span class="text-slate-300">|</span><span class="bg-slate-100 px-2 py-0.5 rounded text-slate-700">Lote: L-8842</span><span class="text-slate-300">|</span><span class="bg-slate-100 px-2 py-0.5 rounded text-slate-700 font-semibold">12.0 kg</span></div></div></div></section>
+<!-- END: Scanned Content Info -->
+<!-- BEGIN: Bottom Summary & Trailer Balance -->
+<footer class="px-6 pt-3 pb-6 bg-slate-50 border-t border-slate-200" data-purpose="truck-remaining-card"><div class="bg-white rounded-xl p-3.5 border border-slate-300 shadow-sm space-y-2"><div class="flex items-center justify-between"><div class="flex flex-col"><span class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Carga del Camión</span><span class="text-sm font-bold text-slate-900">Restante: 28 de 50 bultos</span></div><div class="text-right"><div class="flex items-baseline space-x-1 justify-end"><span class="text-2xl font-extrabold text-blue-600 font-mono tracking-tight">28</span><span class="text-xs font-semibold text-slate-600">bultos</span></div><span class="text-[11px] font-bold text-emerald-600">44% descargado</span></div></div><div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden"><div class="bg-blue-600 h-1.5 rounded-full" style="width: 44%"></div></div><div class="flex items-center justify-between text-[11px] text-slate-500 pt-0.5 font-medium"><span>Distribuidora del Bajío</span><span class="font-mono">FAC-99201</span></div></div><div class="mt-3 grid grid-cols-2 gap-2"><button class="w-full py-2.5 px-3 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5" type="button"><span class="material-symbols-outlined text-base text-slate-600">report_problem</span><span>Incidencia</span></button><button class="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm flex items-center justify-center gap-1.5" type="button"><span class="material-symbols-outlined text-base">check_circle</span><span>Confirmar Bulto</span></button></div></footer>
+<!-- END: Bottom Summary & Trailer Balance -->
+</main>
+<!-- END: Mobile Device Frame -->
+<!-- BEGIN: Interactive Flashlight Script -->
+<script data-purpose="flashlight-toggle">
+    // Simula la interacción del botón de linterna
+    const torchBtn = document.getElementById('torch-btn');
+    let isTorchOn = false;
+
+    torchBtn.addEventListener('click', () => {
+      isTorchOn = !isTorchOn;
+      if (isTorchOn) {
+        torchBtn.classList.remove('bg-slate-100', 'text-slate-700');
+        torchBtn.classList.add('bg-amber-400', 'text-slate-900', 'shadow-md');
+      } else {
+        torchBtn.classList.remove('bg-amber-400', 'text-slate-900', 'shadow-md');
+        torchBtn.classList.add('bg-slate-100', 'text-slate-700');
+      }
+    });
+  </script>
+<!-- END: Interactive Flashlight Script -->
+</body></html>

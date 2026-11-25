@@ -17,14 +17,33 @@ model Sucursal {
   lineasOC     LineaOC[]
 }
 
+model Proveedor {
+  idProveedor   Int           @id @default(autoincrement())
+  nombre        String        @unique
+  correo        String        @unique
+  password      String
+  productos     Producto[]
+  ordenesCompra OrdenCompra[]
+}
+
+model Producto {
+  sku               String    @id
+  idProveedor       Int
+  descripcion       String
+  pesoUnitarioKg    Float
+  volumenUnitarioM3 Float
+  proveedorRel      Proveedor @relation(fields: [idProveedor], references: [idProveedor])
+}
+
 model OrdenCompra {
-  idOc        String        @id
-  proveedor   String
+  idOc         String       @id
+  idProveedor  Int
   fechaEmision DateTime     @default(now())
-  estado      String        @default("PENDIENTE")
-  lineas      LineaOC[]
-  citaFactura CitaFactura?
-  bultos      Bulto[]
+  estado       String       @default("PENDIENTE")
+  proveedorRel Proveedor    @relation(fields: [idProveedor], references: [idProveedor])
+  lineas       LineaOC[]
+  citaFactura  CitaFactura?
+  bultos       Bulto[]
 }
 
 model LineaOC {

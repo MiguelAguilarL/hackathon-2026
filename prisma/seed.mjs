@@ -3,10 +3,9 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("Iniciando seed de base de datos CEDIS Catlovers...");
+  console.log("Iniciando seed de base de datos CEDIS Papelería Catlovers...");
 
-  // 1. 32 sucursales / racks (1 rack por tienda destino):
-  //    cerca 9–16 | media 1–8 y 17–23 | lejos 24–32. Cada rack: 4×8 tarimas.
+  // 1. Crear las 32 sucursales de la cadena de papelerías (1 rack por sucursal: 4 niveles x 8 tarimas = 32 tarimas)
   const nombresSucursales = [
     "Centro Histórico", "Norte Industrial", "Sur Periférico", "Poniente Santa Fe",
     "Oriente Aeropuerto", "Valle Dorado", "Satélite", "Interlomas",
@@ -26,37 +25,193 @@ async function main() {
       create: {
         id: i,
         codigo: `SUC-${num}`,
-        nombre: `Sucursal ${num} - ${nombresSucursales[i - 1]}`,
+        nombre: `Papelería Sucursal ${num} - ${nombresSucursales[i - 1]}`,
         rackAsignado: `RACK-${num}`,
       },
     });
   }
 
-  // 2. Crear Órdenes de Compra (OC) de ejemplo para la demo
+  // 2. Crear Proveedores del giro de Papelería con sus credenciales de acceso al portal /proveedor
+  const proveedoresSeed = [
+    {
+      idProveedor: 1,
+      nombre: "Papelera y Bobinas Nacionales S.A. de C.V.",
+      correo: "ventas@papeleranacional.mx",
+      password: "Papel2026*",
+    },
+    {
+      idProveedor: 2,
+      nombre: "Distribuidora Escolar y Cuadernos del Centro S.A.",
+      correo: "logistica@escolardelcentro.mx",
+      password: "Escolar2026*",
+    },
+    {
+      idProveedor: 3,
+      nombre: "Artículos de Escritura y Oficina Globales S.A.",
+      correo: "entregas@escrituraglobal.mx",
+      password: "Oficina2026*",
+    },
+    {
+      idProveedor: 4,
+      nombre: "Suministros de Arte, Cartulinas y Didácticos S.A.",
+      correo: "cedis@arteydidacticos.mx",
+      password: "Arte2026*",
+    },
+  ];
+
+  for (const prov of proveedoresSeed) {
+    await prisma.proveedor.upsert({
+      where: { idProveedor: prov.idProveedor },
+      update: {
+        nombre: prov.nombre,
+        correo: prov.correo,
+        password: prov.password,
+      },
+      create: prov,
+    });
+  }
+
+  // 3. Crear Catálogo Maestro de Productos de Papelería por Proveedor (con peso y volumen por pieza/paquete)
+  const productosSeed = [
+    // Proveedor 1: Papelera y Bobinas Nacionales S.A. de C.V.
+    {
+      sku: "PAP-BOND-CARTA",
+      idProveedor: 1,
+      descripcion: "Caja Papel Bond Blancura 99 Tamaño Carta (10 resmas de 500 hojas)",
+      pesoUnitarioKg: 23.5,
+      volumenUnitarioM3: 0.055,
+    },
+    {
+      sku: "PAP-BOND-OFICIO",
+      idProveedor: 1,
+      descripcion: "Caja Papel Bond Tamaño Oficio (10 resmas de 500 hojas)",
+      pesoUnitarioKg: 28.0,
+      volumenUnitarioM3: 0.065,
+    },
+    {
+      sku: "PAP-OPALINA-100",
+      idProveedor: 1,
+      descripcion: "Caja Cartulina Opalina Blanca 225g (20 paquetes de 100 hojas)",
+      pesoUnitarioKg: 16.0,
+      volumenUnitarioM3: 0.042,
+    },
+
+    // Proveedor 2: Distribuidora Escolar y Cuadernos del Centro S.A.
+    {
+      sku: "CUA-PROF-100C",
+      idProveedor: 2,
+      descripcion: "Caja Cuaderno Profesional Espiral Doble Cuadro Grande 100 Hojas (40 pzas)",
+      pesoUnitarioKg: 18.0,
+      volumenUnitarioM3: 0.048,
+    },
+    {
+      sku: "CUA-ITAL-RAYA",
+      idProveedor: 2,
+      descripcion: "Caja Cuaderno Italiano Cosido Raya 100 Hojas (50 pzas)",
+      pesoUnitarioKg: 15.5,
+      volumenUnitarioM3: 0.04,
+    },
+    {
+      sku: "LIB-CONT-3COL",
+      idProveedor: 2,
+      descripcion: "Paquete Libros Florete y Contabilidad Pasta Dura (20 pzas)",
+      pesoUnitarioKg: 14.0,
+      volumenUnitarioM3: 0.036,
+    },
+
+    // Proveedor 3: Artículos de Escritura y Oficina Globales S.A.
+    {
+      sku: "ESC-BOL-NEGRO",
+      idProveedor: 3,
+      descripcion: "Caja Master Bolígrafo Punto Mediano Tinta Negra (100 exhibidores de 12 pzas)",
+      pesoUnitarioKg: 12.0,
+      volumenUnitarioM3: 0.035,
+    },
+    {
+      sku: "OFI-CARP-LEF",
+      idProveedor: 3,
+      descripcion: "Caja Registrador Lefort Tamaño Carta con Herraje (30 carpetas)",
+      pesoUnitarioKg: 14.5,
+      volumenUnitarioM3: 0.068,
+    },
+    {
+      sku: "ESC-MARC-PIZ",
+      idProveedor: 3,
+      descripcion: "Caja Master Marcadores para Pizarrón Blanco 4 Colores (80 estuches)",
+      pesoUnitarioKg: 9.8,
+      volumenUnitarioM3: 0.03,
+    },
+
+    // Proveedor 4: Suministros de Arte, Cartulinas y Didácticos S.A.
+    {
+      sku: "ART-CART-BRIS",
+      idProveedor: 4,
+      descripcion: "Paquete Industrial Cartulina Bristol Colores Pastel (250 pliegos)",
+      pesoUnitarioKg: 19.5,
+      volumenUnitarioM3: 0.052,
+    },
+    {
+      sku: "ART-PINT-ACR",
+      idProveedor: 4,
+      descripcion: "Caja Kits de Pintura Acrílica Escolar y Pinceles (36 sets)",
+      pesoUnitarioKg: 16.8,
+      volumenUnitarioM3: 0.044,
+    },
+    {
+      sku: "ART-FOAMI-CARTA",
+      idProveedor: 4,
+      descripcion: "Caja Fomi Escolar Tamaño Carta Surtido (100 paquetes de 24 pliegos)",
+      pesoUnitarioKg: 11.2,
+      volumenUnitarioM3: 0.062,
+    },
+  ];
+
+  for (const prod of productosSeed) {
+    await prisma.producto.upsert({
+      where: { sku: prod.sku },
+      update: {
+        idProveedor: prod.idProveedor,
+        descripcion: prod.descripcion,
+        pesoUnitarioKg: prod.pesoUnitarioKg,
+        volumenUnitarioM3: prod.volumenUnitarioM3,
+      },
+      create: prod,
+    });
+  }
+
+  // 4. Crear Órdenes de Compra (OC) de Papelería relacionadas con Proveedor mediante idProveedor
   const ocs = [
     {
       idOc: "OC-2026-001",
-      proveedor: "Distribuidora Industrial del Bajío S.A.",
+      idProveedor: 1,
       lineas: [
-        { sku: "SKU-ACE-01", descripcion: "Caja Aceite Motor Sintético 1L", sucursalId: 1, piezasPedidas: 120 },
-        { sku: "SKU-BAT-12", descripcion: "Batería Automotriz Uso Rudo 12V", sucursalId: 1, piezasPedidas: 40 },
-        { sku: "SKU-FIL-09", descripcion: "Kit Filtros Industriales", sucursalId: 2, piezasPedidas: 50 },
+        { sku: "PAP-BOND-CARTA", descripcion: "Caja Papel Bond Blancura 99 Tamaño Carta (10 resmas de 500 hojas)", sucursalId: 1, piezasPedidas: 430 },
+        { sku: "PAP-BOND-OFICIO", descripcion: "Caja Papel Bond Tamaño Oficio (10 resmas de 500 hojas)", sucursalId: 1, piezasPedidas: 34 },
+        { sku: "PAP-OPALINA-100", descripcion: "Caja Cartulina Opalina Blanca 225g (20 paquetes de 100 hojas)", sucursalId: 2, piezasPedidas: 30 },
       ],
     },
     {
       idOc: "OC-2026-002",
-      proveedor: "Alimentos y Bebidas Nacionales S.A.",
+      idProveedor: 2,
       lineas: [
-        { sku: "SKU-BEB-24", descripcion: "Paquete Bebida Energética 24p", sucursalId: 1, piezasPedidas: 200 },
-        { sku: "SKU-BOT-50", descripcion: "Caja Botana Salada 50p", sucursalId: 3, piezasPedidas: 100 },
+        { sku: "CUA-PROF-100C", descripcion: "Caja Cuaderno Profesional Espiral Doble Cuadro Grande 100 Hojas (40 pzas)", sucursalId: 1, piezasPedidas: 40 },
+        { sku: "CUA-ITAL-RAYA", descripcion: "Caja Cuaderno Italiano Cosido Raya 100 Hojas (50 pzas)", sucursalId: 3, piezasPedidas: 30 },
       ],
     },
     {
       idOc: "OC-2026-003",
-      proveedor: "Ferretería y Suministros Globales",
+      idProveedor: 3,
       lineas: [
-        { sku: "SKU-HER-10", descripcion: "Caja Herramienta Pesada", sucursalId: 4, piezasPedidas: 30 },
-        { sku: "SKU-TOR-99", descripcion: "Tornillería Acero Alta Densidad", sucursalId: 1, piezasPedidas: 500 },
+        { sku: "ESC-BOL-NEGRO", descripcion: "Caja Master Bolígrafo Punto Mediano Tinta Negra (100 exhibidores de 12 pzas)", sucursalId: 4, piezasPedidas: 25 },
+        { sku: "OFI-CARP-LEF", descripcion: "Caja Registrador Lefort Tamaño Carta con Herraje (30 carpetas)", sucursalId: 1, piezasPedidas: 30 },
+      ],
+    },
+    {
+      idOc: "OC-2026-004",
+      idProveedor: 4,
+      lineas: [
+        { sku: "ART-CART-BRIS", descripcion: "Paquete Industrial Cartulina Bristol Colores Pastel (250 pliegos)", sucursalId: 1, piezasPedidas: 35 },
+        { sku: "ART-PINT-ACR", descripcion: "Caja Kits de Pintura Acrílica Escolar y Pinceles (36 sets)", sucursalId: 2, piezasPedidas: 20 },
       ],
     },
   ];
@@ -67,7 +222,7 @@ async function main() {
       await prisma.ordenCompra.create({
         data: {
           idOc: oc.idOc,
-          proveedor: oc.proveedor,
+          idProveedor: oc.idProveedor,
           lineas: {
             create: oc.lineas,
           },
@@ -76,14 +231,14 @@ async function main() {
     }
   }
 
-  // 3. Crear una Cita/Factura de demostración con bultos ya en RACK-01 (al ~85% del Tortón para que en la demo un escaneo alcance el >=90%)
-  const citaDemo = await prisma.citaFactura.findUnique({ where: { folioFactura: "FAC-2026-8841" } });
+  // 5. Crear una Cita/Factura de demostración de Papelería con bultos ya en RACK-01 (al ~84% del Tortón para que en la demo 1 escaneo alcance el >=90%)
+  const citaDemo = await prisma.citaFactura.findUnique({ where: { folioFactura: "CFDI-PBN-2026-0001" } });
   if (!citaDemo) {
     await prisma.citaFactura.create({
       data: {
         idOc: "OC-2026-001",
-        folioFactura: "FAC-2026-8841",
-        proveedor: "Distribuidora Industrial del Bajío S.A.",
+        folioFactura: "CFDI-PBN-2026-0001",
+        proveedor: "Papelera y Bobinas Nacionales S.A. de C.V.",
         anden: 1,
         fecha: "2026-11-25",
         horaInicio: 9,
@@ -91,50 +246,44 @@ async function main() {
         estado: "EN_RECIBO",
         bultos: {
           create: [
-            // Demo Tortón ~85%: bulto ya acomodado en RACK-01 zona A (alta demanda).
+            // 430 cajas de Papel Bond Carta (430 * 23.5 kg = 10,105 kg; 430 * 0.055 m3 = 23.65 m3) -> Ya en RACK-01
             {
-              idBulto: "BUL-8841-01",
+              idBulto: "BUL-CFDI-PBN-2026-0001-01",
               idOc: "OC-2026-001",
-              proveedor: "Distribuidora Industrial del Bajío S.A.",
+              proveedor: "Papelera y Bobinas Nacionales S.A. de C.V.",
               sucursalId: 1,
-              sku: "SKU-ACE-01",
-              descripcion: "Tarima Consolidada Aceite Motor Sintético",
-              piezas: 100,
-              pesoKg: 10100,
-              volumenM3: 24.5,
-              altoM: 1.5,
-              nivel: 1,
-              columna: 1,
-              demandaEmbarque: "alta",
+              sku: "PAP-BOND-CARTA",
+              descripcion: "Caja Papel Bond Blancura 99 Tamaño Carta (10 resmas de 500 hojas)",
+              piezas: 430,
+              pesoKg: 10105,
+              volumenM3: 23.65,
               estado: "EN_RACK",
             },
-            // Pendiente de recibo → aún sin posición en rack.
+            // Bulto pendiente en andén: 34 cajas de Papel Bond Oficio (34 * 28 kg = 952 kg; 34 * 0.065 m3 = 2.21 m3)
+            // Al escanearlo en /handheld sube RACK-01 a 11,057 kg (92.1%) y 25.86 m3 (90.4%) -> Desbloquea el Tortón (>=90%)
             {
-              idBulto: "BUL-8841-02",
+              idBulto: "BUL-CFDI-PBN-2026-0001-02",
               idOc: "OC-2026-001",
-              proveedor: "Distribuidora Industrial del Bajío S.A.",
+              proveedor: "Papelera y Bobinas Nacionales S.A. de C.V.",
               sucursalId: 1,
-              sku: "SKU-BAT-12",
-              descripcion: "Tarima Baterías Automotrices 12V",
-              piezas: 40,
-              pesoKg: 950,
-              volumenM3: 2.1,
-              altoM: 1.2,
-              demandaEmbarque: "alta",
+              sku: "PAP-BOND-OFICIO",
+              descripcion: "Caja Papel Bond Tamaño Oficio (10 resmas de 500 hojas)",
+              piezas: 34,
+              pesoKg: 952,
+              volumenM3: 2.21,
               estado: "PENDIENTE_RECIBO",
             },
+            // Bulto para Sucursal 02: 30 cajas de Cartulina Opalina (30 * 16 kg = 480 kg; 30 * 0.042 m3 = 1.26 m3)
             {
-              idBulto: "BUL-8841-03",
+              idBulto: "BUL-CFDI-PBN-2026-0001-03",
               idOc: "OC-2026-001",
-              proveedor: "Distribuidora Industrial del Bajío S.A.",
+              proveedor: "Papelera y Bobinas Nacionales S.A. de C.V.",
               sucursalId: 2,
-              sku: "SKU-FIL-09",
-              descripcion: "Caja Kit Filtros Industriales",
-              piezas: 50,
-              pesoKg: 420,
-              volumenM3: 1.8,
-              altoM: 0.9,
-              demandaEmbarque: "media",
+              sku: "PAP-OPALINA-100",
+              descripcion: "Caja Cartulina Opalina Blanca 225g (20 paquetes de 100 hojas)",
+              piezas: 30,
+              pesoKg: 480,
+              volumenM3: 1.26,
               estado: "PENDIENTE_RECIBO",
             },
           ],
@@ -143,27 +292,7 @@ async function main() {
     });
   }
 
-  // Si la cita demo ya existía, asegramos posición en el bulto EN_RACK.
-  await prisma.bulto.updateMany({
-    where: { idBulto: "BUL-8841-01" },
-    data: {
-      altoM: 1.5,
-      nivel: 1,
-      columna: 1,
-      demandaEmbarque: "alta",
-      estado: "EN_RACK",
-    },
-  });
-  await prisma.bulto.updateMany({
-    where: { idBulto: "BUL-8841-02" },
-    data: { altoM: 1.2, demandaEmbarque: "alta" },
-  });
-  await prisma.bulto.updateMany({
-    where: { idBulto: "BUL-8841-03" },
-    data: { altoM: 0.9, demandaEmbarque: "media" },
-  });
-
-  console.log("Seed completado: 32 Sucursales/Racks, 3 OCs y Bultos con posición de rack.");
+  console.log("Seed completado: 32 Sucursales de Papelería, 4 Proveedores, 12 Productos en Catálogo, 4 OCs y Bultos creados.");
 }
 
 main()

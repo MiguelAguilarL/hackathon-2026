@@ -42,10 +42,10 @@ function metaRack() {
   };
 }
 
-// GET /api/cedis -> Obtiene estado general (OCs, Citas/Facturas, Sucursales con Bultos en Rack y Embarques)
+// GET /api/cedis -> Obtiene estado general (OCs con Proveedor, Catálogo de Productos, Citas/Facturas, Sucursales y Embarques)
 export async function GET() {
   try {
-    const [sucursales, ordenesCompra, citasFacturas, bultos, embarques] = await Promise.all([
+    const [sucursales, proveedores, productos, ordenesCompraRaw, citasFacturas, bultos, embarques] = await Promise.all([
       prisma.sucursal.findMany({
         orderBy: { id: "asc" },
         include: {
@@ -54,8 +54,30 @@ export async function GET() {
           },
         },
       }),
+      prisma.proveedor.findMany({
+        orderBy: { idProveedor: "asc" },
+        select: {
+          idProveedor: true,
+          nombre: true,
+          correo: true,
+          productos: true,
+        },
+      }),
+      prisma.producto.findMany({
+        orderBy: { sku: "asc" },
+      }),
       prisma.ordenCompra.findMany({
-        include: { lineas: true, citaFactura: true },
+        include: {
+          lineas: true,
+          citaFactura: true,
+          proveedorRel: {
+            select: {
+              idProveedor: true,
+              nombre: true,
+              correo: true,
+            },
+          },
+        },
       }),
       prisma.citaFactura.findMany({
         include: { bultos: true },
@@ -70,10 +92,17 @@ export async function GET() {
       }),
     ]);
 
+    const ordenesCompra = ordenesCompraRaw.map((oc) => ({
+      ...oc,
+      proveedor: oc.proveedorRel?.nombre || `Proveedor #${oc.idProveedor}`,
+    }));
+
     return NextResponse.json({
       rules: CEDIS_RULES,
       rack: metaRack(),
       sucursales,
+      proveedores,
+      productos,
       ordenesCompra,
       citasFacturas,
       bultos,
@@ -90,21 +119,20 @@ export async function POST(request) {
     const body = await request.json();
     const { action } = body;
 
-    // MOMENTO 1 y 2: Agendar cita + Registrar Factura Única + Desglose de Bultos
+    // MOMENTO 1 y 2: Agendar cita + Registrar Factura Única + Desglose de Bultos (con cálculo automático de peso y volumen desde Producto)
     if (action === "AGENDAR_CITA") {
       const { idOc, folioFactura, proveedor, anden, fecha, horaInicio, duracionHoras, bultos } = body;
 
       if (anden < 1 || anden > 4) {
         return NextResponse.json({ error: "El andén de recibo debe ser entre 1 y 4." }, { status: 400 });
       }
-      if (duracionHoras < 1 || horaInicio < 8 || horaInicio + duracionHoras > 18) {
+      if (duracionHoras < 1 || duracionHoras > 2 || horaInicio < 8 || horaInicio + duracionHoras > 18) {
         return NextResponse.json(
-          { error: "Horario inválido. Las citas son de 08:00 a 18:00 hrs con duración mínima de 1 hora." },
+          { error: "Horario inválido. Las citas son de 08:00 a 18:00 hrs con duración de 1 a 2 horas." },
           { status: 400 }
         );
       }
 
-      // Validar que no se repita el folio de factura
       const facturaExistente = await prisma.citaFactura.findUnique({ where: { folioFactura } });
       if (facturaExistente) {
         return NextResponse.json(
@@ -113,7 +141,6 @@ export async function POST(request) {
         );
       }
 
-      // Validar que no exista traslape en el mismo andén y fecha
       const citasAnden = await prisma.citaFactura.findMany({
         where: { anden: Number(anden), fecha },
       });
@@ -132,27 +159,49 @@ export async function POST(request) {
         );
       }
 
+      const [ocDB, catalogoProductos] = await Promise.all([
+        prisma.ordenCompra.findUnique({
+          where: { idOc },
+          include: { proveedorRel: true },
+        }),
+        prisma.producto.findMany(),
+      ]);
+
+      const mapaProductos = new Map(catalogoProductos.map((p) => [p.sku, p]));
+      const nombreProveedorOficial = ocDB?.proveedorRel?.nombre || proveedor || "Proveedor Externo";
+
       const nuevaCita = await prisma.citaFactura.create({
         data: {
           idOc,
           folioFactura,
-          proveedor,
+          proveedor: nombreProveedorOficial,
           anden: Number(anden),
           fecha,
           horaInicio: Number(horaInicio),
           duracionHoras: Number(duracionHoras),
           bultos: {
-            create: (bultos || []).map((b, idx) => ({
-              idBulto: b.idBulto || `BUL-${folioFactura}-${String(idx + 1).padStart(2, "0")}`,
-              idOc,
-              proveedor,
-              sucursalId: Number(b.sucursalId),
-              sku: b.sku,
-              descripcion: b.descripcion || b.sku,
-              piezas: Number(b.piezas),
-              pesoKg: Number(b.pesoKg),
-              volumenM3: Number(b.volumenM3),
-            })),
+            create: (bultos || []).map((b, idx) => {
+              const prod = mapaProductos.get(b.sku);
+              const piezas = Number(b.piezas);
+              const pesoCalculado = prod
+                ? Number((piezas * prod.pesoUnitarioKg).toFixed(2))
+                : Number(b.pesoKg || 0);
+              const volumenCalculado = prod
+                ? Number((piezas * prod.volumenUnitarioM3).toFixed(3))
+                : Number(b.volumenM3 || 0);
+
+              return {
+                idBulto: b.idBulto || `BUL-${folioFactura}-${String(idx + 1).padStart(2, "0")}`,
+                idOc,
+                proveedor: nombreProveedorOficial,
+                sucursalId: Number(b.sucursalId),
+                sku: b.sku,
+                descripcion: prod?.descripcion || b.descripcion || b.sku,
+                piezas,
+                pesoKg: pesoCalculado,
+                volumenM3: volumenCalculado,
+              };
+            }),
           },
         },
         include: { bultos: true },
@@ -165,7 +214,6 @@ export async function POST(request) {
     if (action === "ESCANEAR_BULTO") {
       const { idBulto, idOc, sku, piezas, sucursalId } = body;
 
-      // Buscar la OC y sus líneas solicitadas
       const oc = await prisma.ordenCompra.findUnique({
         where: { idOc },
         include: { lineas: true, bultos: true },
@@ -183,7 +231,6 @@ export async function POST(request) {
       );
 
       if (!lineaSolicitada) {
-        // Rechazo por SKU no solicitado
         if (idBulto) {
           await prisma.bulto.updateMany({
             where: { idBulto },
@@ -197,7 +244,6 @@ export async function POST(request) {
         });
       }
 
-      // Verificar si las piezas ya recibidas en rack + piezas del bulto exceden lo pedido en la OC
       const piezasYaRecibidas = oc.bultos
         .filter((b) => b.sku === sku && b.sucursalId === Number(sucursalId) && b.estado === "EN_RACK" && b.idBulto !== idBulto)
         .reduce((acc, b) => acc + b.piezas, 0);
@@ -219,7 +265,6 @@ export async function POST(request) {
         });
       }
 
-      // Si pasa la validación, se marca EN_RACK y se asigna al rack de la sucursal
       const bultoActualizado = await prisma.bulto.update({
         where: { idBulto },
         data: { estado: "EN_RACK", motivoRechazo: null },

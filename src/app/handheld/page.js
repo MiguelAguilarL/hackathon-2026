@@ -1,231 +1,154 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import HandheldShell from "./_components/HandheldShell";
+import QrViewport from "./_components/QrViewport";
+import ScanResultCard from "./_components/ScanResultCard";
+import TruckProgressCard from "./_components/TruckProgressCard";
+import ManualInputBar from "./_components/ManualInputBar";
+import IncidentSheet from "./_components/IncidentSheet";
+import { useHandheldScan } from "./_hooks/useHandheldScan";
 
 export default function HandheldPage() {
-  const [data, setData] = useState(null);
-  const [qrInput, setQrInput] = useState("");
-  const [resultadoEscaneo, setResultadoEscaneo] = useState(null);
-  const [reporteFaltantes, setReporteFaltantes] = useState(null);
+  const {
+    data,
+    estado,
+    resultado,
+    payload,
+    contenidoQR,
+    reporteFaltantes,
+    errorCarga,
+    procesarPayloadQR,
+    procesarTextoQR,
+    reiniciar,
+    verificarFaltantesFactura,
+    cerrarReporte,
+  } = useHandheldScan();
 
-  const cargarDatos = async () => {
-    const res = await fetch("/api/cedis");
-    const json = await res.json();
-    setData(json);
-  };
+  const [incidenciaAbierta, setIncidenciaAbierta] = useState(false);
+
+  const citas = data?.citasFacturas || [];
+  const citaActiva = useMemo(() => {
+    const porPayload = citas.find(
+      (cita) =>
+        (payload?.folioFactura && cita.folioFactura === payload.folioFactura) ||
+        (payload?.idOc && cita.idOc === payload.idOc)
+    );
+    if (porPayload) return porPayload;
+    return citas.find((cita) => cita.bultos?.some((bulto) => bulto.estado === "PENDIENTE_RECIBO")) || citas[0];
+  }, [citas, payload]);
+
+  const bultosPendientes = useMemo(
+    () => (data?.bultos || []).filter((bulto) => bulto.estado === "PENDIENTE_RECIBO"),
+    [data]
+  );
+
+  const bultoLeido = useMemo(() => {
+    const id = payload?.idBulto;
+    if (!id) return null;
+    return (data?.bultos || []).find((bulto) => bulto.idBulto === id) || null;
+  }, [data, payload]);
+
+  const sucursalDestino = useMemo(() => {
+    const porBultoLeido = bultoLeido
+      ? bultoLeido.sucursal ||
+        (data?.sucursales || []).find((sucursal) => sucursal.id === bultoLeido.sucursalId)
+      : null;
+    if (porBultoLeido) return porBultoLeido;
+
+    const referencia = bultosPendientes[0];
+    if (!referencia) return null;
+    if (referencia.sucursal) return referencia.sucursal;
+    return (data?.sucursales || []).find((sucursal) => sucursal.id === referencia.sucursalId) || null;
+  }, [bultoLeido, bultosPendientes, data]);
 
   useEffect(() => {
-    cargarDatos();
-  }, []);
-
-  const procesarPayloadQR = async (payloadObj) => {
-    setResultadoEscaneo(null);
-    const res = await fetch("/api/cedis", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "ESCANEAR_BULTO",
-        ...payloadObj,
-      }),
-    });
-    const json = await res.json();
-    setResultadoEscaneo(json);
-    cargarDatos();
-  };
-
-  const handleScanManual = (e) => {
-    e.preventDefault();
-    try {
-      const parsed = JSON.parse(qrInput);
-      procesarPayloadQR(parsed);
-    } catch {
-      setResultadoEscaneo({
-        ok: false,
-        rechazado: true,
-        motivo: "El código QR escaneado no tiene un formato JSON válido de etiqueta CEDIS.",
-      });
+    if (estado !== "OK" && estado !== "RECHAZADO") return;
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate(estado === "OK" ? 80 : [120, 60, 120]);
     }
-  };
+  }, [estado, resultado]);
 
-  const verificarFaltantesFactura = (cita) => {
-    const faltantes = cita.bultos.filter((b) => b.estado === "PENDIENTE_RECIBO");
-    setReporteFaltantes({
-      folioFactura: cita.folioFactura,
-      idOc: cita.idOc,
-      faltantes,
-    });
-  };
+  const camaraActiva = estado === "IDLE";
 
-  const bultosPendientes = data?.bultos?.filter((b) => b.estado === "PENDIENTE_RECIBO") || [];
+  const footer = (
+    <footer className="shrink-0 px-5 py-3 bg-slate-50 border-t border-slate-200 grid grid-cols-2 gap-3 md:px-8 md:grid-cols-none md:flex md:justify-end md:gap-4">
+      <button
+        type="button"
+        onClick={() => setIncidenciaAbierta(true)}
+        className="min-h-[56px] rounded-xl bg-slate-200 text-slate-800 text-sm font-extrabold hover:bg-slate-300 flex items-center justify-center gap-2 md:w-56"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+          <path d="M12 9v4m0 4h.01M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Incidencia
+      </button>
+      <button
+        type="button"
+        onClick={reiniciar}
+        disabled={estado === "IDLE" || estado === "VALIDANDO"}
+        className={`min-h-[56px] rounded-xl text-sm font-extrabold text-white flex items-center justify-center gap-2 md:w-56 disabled:opacity-40 disabled:cursor-not-allowed ${
+          estado === "RECHAZADO" ? "bg-red-700 hover:bg-red-800" : "bg-sky-700 hover:bg-sky-800"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className="w-5 h-5">
+          <path d="m5 13 4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {estado === "RECHAZADO" ? "Entendido" : estado === "LEIDO" ? "Siguiente lectura" : "Siguiente bulto"}
+      </button>
+    </footer>
+  );
+
+  const overlay = (
+    <IncidentSheet
+      abierto={incidenciaAbierta}
+      resultado={resultado}
+      payload={payload}
+      onCerrar={() => setIncidenciaAbierta(false)}
+    />
+  );
 
   return (
-    <div className="max-w-lg mx-auto bg-slate-900 text-white rounded-2xl p-6 shadow-xl border-4 border-slate-700 space-y-6">
-      <div className="flex items-center justify-between border-b border-slate-700 pb-3">
-        <div>
-          <span className="text-[10px] font-black uppercase bg-emerald-500 text-slate-950 px-2 py-0.5 rounded">
-            DEV 2 · TERMINAL INDUSTRIAL ANDROID 2D
-          </span>
-          <h1 className="text-xl font-extrabold mt-1">Recibo y Validación QR en Andén</h1>
-        </div>
-        <span className="text-xs font-mono text-emerald-400">Wi-Fi 6: -48 dBm</span>
-      </div>
-
-      {/* Estado de lectura inmediata (Verde OK / Rojo Rechazo Cero Tolerancia) */}
-      {resultadoEscaneo && (
-        <div
-          className={`p-4 rounded-xl border-2 ${
-            resultadoEscaneo.rechazado
-              ? "bg-red-950 border-red-500 text-red-200"
-              : "bg-emerald-950 border-emerald-400 text-emerald-200"
-          }`}
-        >
-          <p className="text-xs font-black uppercase tracking-wider">
-            {resultadoEscaneo.rechazado ? "ALERTA ROJA · BULTO RECHAZADO EN ANDÉN" : "VALIDACIÓN EXITOSA · ENVIAR A RACK"}
-          </p>
-          <p className="text-base font-bold mt-1">
-            {resultadoEscaneo.rechazado ? resultadoEscaneo.motivo : resultadoEscaneo.mensaje}
-          </p>
+    <HandheldShell
+      anden={citaActiva?.anden}
+      folio={citaActiva?.folioFactura}
+      estado={estado}
+      cargado={Boolean(data) && !errorCarga}
+      footer={footer}
+      overlay={overlay}
+    >
+      {errorCarga && (
+        <div className="px-5 py-2 bg-red-50 border-b border-red-200 text-[11px] font-bold text-red-800 md:col-span-2">
+          {errorCarga}
         </div>
       )}
 
-      {/* Simulador rápido de escaneo con 1 clic para la demo frente a los jueces */}
-      <div className="space-y-3">
-        <p className="text-xs font-bold uppercase text-slate-400">
-          1. Bultos en Andén listos para escanear con Lector 2D:
-        </p>
-        {bultosPendientes.length === 0 ? (
-          <p className="text-xs text-slate-400 bg-slate-800 p-3 rounded-lg">
-            No hay bultos pendientes de escanear. Agenda una nueva cita en /proveedor.
-          </p>
-        ) : (
-          bultosPendientes.map((b) => (
-            <div
-              key={b.idBulto}
-              className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex items-center justify-between gap-2"
-            >
-              <div className="text-xs">
-                <p className="font-mono font-bold text-amber-400">
-                  {b.idBulto} · {b.sku} ({b.piezas} pzas)
-                </p>
-                <p className="text-slate-400">
-                  OC: {b.idOc} · Destino: SUC-{String(b.sucursalId).padStart(2, "0")} ({b.pesoKg} kg / {b.volumenM3} m³)
-                </p>
-              </div>
-              <button
-                onClick={() =>
-                  procesarPayloadQR({
-                    idBulto: b.idBulto,
-                    idOc: b.idOc,
-                    sku: b.sku,
-                    piezas: b.piezas,
-                    sucursalId: b.sucursalId,
-                  })
-                }
-                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-3 py-2 rounded-lg shrink-0"
-              >
-                Escanear QR Válido
-              </button>
-            </div>
-          ))
-        )}
+      <QrViewport activo={camaraActiva} onDecode={procesarTextoQR} />
 
-        {/* Botones de prueba para demostrar Cero Tolerancia a Discrepancias */}
-        <p className="text-xs font-bold uppercase text-slate-400 pt-2">
-          2. Pruebas de Discrepancia (Cero Tolerancia):
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() =>
-              procesarPayloadQR({
-                idBulto: "BUL-ERR-SKU",
-                idOc: "OC-2026-001",
-                sku: "SKU-NO-PEDIDO-999",
-                piezas: 25,
-                sucursalId: 1,
-              })
-            }
-            className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs p-3 rounded-xl text-left"
-          >
-            Simular QR con SKU No Solicitado
-          </button>
-          <button
-            onClick={() =>
-              procesarPayloadQR({
-                idBulto: "BUL-ERR-EXC",
-                idOc: "OC-2026-001",
-                sku: "SKU-ACE-01",
-                piezas: 950,
-                sucursalId: 1,
-              })
-            }
-            className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs p-3 rounded-xl text-left"
-          >
-            Simular QR con Piezas Excedentes
-          </button>
-        </div>
+      <div className="md:col-start-2 md:row-start-2 md:h-full md:overflow-y-auto md:bg-slate-50 md:border-l md:border-slate-200">
+        <ScanResultCard
+          estado={estado}
+          resultado={resultado}
+          payload={payload}
+          bulto={bultoLeido}
+          contenido={contenidoQR}
+        />
+
+        <TruckProgressCard
+          cita={citaActiva}
+          sucursal={sucursalDestino}
+          reporteFaltantes={reporteFaltantes}
+          onAuditar={() => citaActiva && verificarFaltantesFactura(citaActiva)}
+          onCerrarReporte={cerrarReporte}
+        />
+
+        <ManualInputBar
+          onTexto={procesarTextoQR}
+          onPayload={procesarPayloadQR}
+          bultosPendientes={bultosPendientes}
+          deshabilitado={estado === "VALIDANDO"}
+        />
       </div>
-
-      {/* Entrada directa para Pistola Láser USB/Bluetooth o JSON QR */}
-      <form onSubmit={handleScanManual} className="space-y-2 border-t border-slate-800 pt-4">
-        <label className="block text-xs font-bold uppercase text-slate-400">
-          Entrada Escáner Láser Hardware (JSON del QR):
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={qrInput}
-            onChange={(e) => setQrInput(e.target.value)}
-            placeholder='{"idBulto":"BUL-8841-02","idOc":"OC-2026-001",...}'
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white"
-          />
-          <button
-            type="submit"
-            className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-xs font-bold shrink-0"
-          >
-            Validar
-          </button>
-        </div>
-      </form>
-
-      {/* Cierre de Descarga y Detección de Faltantes */}
-      <div className="border-t border-slate-800 pt-4 space-y-2">
-        <p className="text-xs font-bold uppercase text-slate-400">3. Cierre de Camión y Reporte de Faltantes:</p>
-        {data?.citasFacturas?.map((cita) => (
-          <div key={cita.folioFactura} className="flex items-center justify-between bg-slate-800 p-2.5 rounded-lg text-xs">
-            <span>
-              Factura <strong>{cita.folioFactura}</strong> (Andén {cita.anden})
-            </span>
-            <button
-              onClick={() => verificarFaltantesFactura(cita)}
-              className="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded font-semibold"
-            >
-              Auditar Faltantes
-            </button>
-          </div>
-        ))}
-
-        {reporteFaltantes && (
-          <div className="p-3 rounded-xl bg-amber-950 border border-amber-500 text-amber-200 text-xs mt-2">
-            <p className="font-bold uppercase">
-              Auditoría Factura {reporteFaltantes.folioFactura} ({reporteFaltantes.idOc}):
-            </p>
-            {reporteFaltantes.faltantes.length === 0 ? (
-              <p className="mt-1 text-emerald-300 font-semibold">
-                Recepción 100% completa. Todos los bultos de la factura fueron escaneados y ubicados en rack.
-              </p>
-            ) : (
-              <ul className="mt-1 list-disc list-inside space-y-1">
-                {reporteFaltantes.faltantes.map((f) => (
-                  <li key={f.idBulto}>
-                    FALTANTE DETECTADO: <strong>{f.idBulto}</strong> · SKU {f.sku} ({f.piezas} pzas) para Sucursal{" "}
-                    {f.sucursalId}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+    </HandheldShell>
   );
 }
