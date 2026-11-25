@@ -8,6 +8,7 @@
     "start": "next start",
     "db:push": "prisma db push",
     "db:seed": "node prisma/seed.mjs",
+    "db:studio": "prisma studio",
     "db:setup": "prisma generate && prisma db push && node prisma/seed.mjs"
   },
   "dependencies": {
