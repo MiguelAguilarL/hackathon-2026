@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { RACK_NIVELES, RACK_COLUMNAS, listarPosicionesRack, ZONA_INFO } from "../rackRules";
 import TarimaSlot from "./TarimaSlot";
+import TarimaPanel from "./TarimaPanel";
 
 function agruparBultosPorSlot(bultos = []) {
   const mapa = new Map();
@@ -15,7 +16,12 @@ function agruparBultosPorSlot(bultos = []) {
   return mapa;
 }
 
-export default function RackVista({ sucursal }) {
+export default function RackVista({
+  sucursal,
+  bultosCandidatos = [],
+  onAcomodar,
+  acomodando = false,
+}) {
   const [slotActivo, setSlotActivo] = useState(null);
   const bultos = sucursal?.bultos || [];
   const porSlot = useMemo(() => agruparBultosPorSlot(bultos), [bultos]);
@@ -26,8 +32,9 @@ export default function RackVista({ sucursal }) {
     []
   );
 
-  const detalle =
-    slotActivo && porSlot.get(`${slotActivo.nivel}-${slotActivo.columna}`);
+  const bultosEnSlotActivo = slotActivo
+    ? porSlot.get(`${slotActivo.nivel}-${slotActivo.columna}`) || []
+    : [];
 
   return (
     <section className="space-y-3">
@@ -101,27 +108,16 @@ export default function RackVista({ sucursal }) {
       </div>
 
       {slotActivo && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-          <p className="font-bold text-slate-800">
-            Tarima N{slotActivo.nivel}-C{slotActivo.columna}
-          </p>
-          {detalle && detalle.length > 0 ? (
-            <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
-              {detalle.map((b) => (
-                <li key={b.idBulto} className="flex flex-wrap gap-x-3 gap-y-0.5">
-                  <span className="font-mono font-semibold">{b.idBulto}</span>
-                  <span>{b.sku}</span>
-                  <span className="tabular-nums">
-                    {b.pesoKg} kg · {b.volumenM3} m³
-                    {b.altoM != null ? ` · alto ${b.altoM} m` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-slate-500 mt-1">Tarima vacía.</p>
-          )}
-        </div>
+        <TarimaPanel
+          nivel={slotActivo.nivel}
+          columna={slotActivo.columna}
+          bultosEnSlot={bultosEnSlotActivo}
+          bultosCandidatos={bultosCandidatos}
+          sucursalId={sucursal.id}
+          onAcomodar={onAcomodar}
+          ocupado={acomodando}
+          onCerrar={() => setSlotActivo(null)}
+        />
       )}
     </section>
   );

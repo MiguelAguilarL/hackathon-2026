@@ -11,7 +11,15 @@ import RackVista from "./components/RackVista";
 import RelacionEmbarque from "./components/RelacionEmbarque";
 
 export default function EmbarquesPage() {
-  const { data, loading, error, embarqueEmitido, sucursalActivaId } = useEmbarques();
+  const {
+    data,
+    loading,
+    error,
+    embarqueEmitido,
+    sucursalActivaId,
+    acomodarBultos,
+    acomodando,
+  } = useEmbarques();
 
   const [rackSeleccionadoNum, setRackSeleccionadoNum] = useState(null);
 
@@ -47,6 +55,15 @@ export default function EmbarquesPage() {
   const resumenInspectada = sucursalInspectada
     ? resumenRack(sucursalInspectada, rules)
     : null;
+
+  const bultosCandidatos = !sucursalInspectada
+    ? []
+    : (data.bultos || []).filter(
+        (b) =>
+          Number(b.sucursalId) === Number(sucursalInspectada.id) &&
+          b.estado !== "EMBARCADO" &&
+          b.estado !== "RECHAZADO"
+      );
 
   return (
     <div className="space-y-8">
@@ -85,7 +102,12 @@ export default function EmbarquesPage() {
               </button>
             </div>
             <RackResumen sucursal={sucursalInspectada} resumen={resumenInspectada} />
-            <RackVista sucursal={sucursalInspectada} />
+            <RackVista
+              sucursal={sucursalInspectada}
+              bultosCandidatos={bultosCandidatos}
+              onAcomodar={acomodarBultos}
+              acomodando={acomodando}
+            />
           </div>
         ) : (
           <p className="text-sm text-slate-500 text-center py-2">
