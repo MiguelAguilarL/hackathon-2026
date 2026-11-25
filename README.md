@@ -47,3 +47,33 @@ Reglas
 - La mercancía mantiene la base de la tarima, viene sujeta con film de seguridad y no rebasa la altura máxima.
 - Los camiones se envían por sucursal y no salen hasta cubrir al menos 90% de su capacidad (peso y volumen).
 - Cada embarque genera una Relación de Embarque impresa (también en PDF), con los bultos agrupados por sucursal e identificada con un código QR para recibir la mercancía en destino.
+
+---
+
+## Cómo ejecutar el prototipo
+
+Requisitos: Node.js 20+ con Corepack. **Trabaja siempre dentro de la carpeta `hackathon-2026`** (el `package.json` está ahí; ejecutar los comandos desde la carpeta padre falla con `ENOENT`).
+
+```bash
+cd hackathon-2026
+corepack enable          # solo si "pnpm" no está en PATH
+corepack pnpm install    # instala dependencias y genera el Prisma Client
+corepack pnpm db:setup   # crea prisma/dev.db, aplica el esquema y carga el seed
+corepack pnpm dev        # abre http://localhost:3000
+```
+
+No uses `npm install` ni `npm run dev`: el proyecto usa **`pnpm` de forma obligatoria** (ver `AGENTS.md`). `prisma/dev.db`, `.next/` y `node_modules/` están en `.gitignore`, así que cada persona genera su propia base de datos con `db:setup`. El archivo `.env` sí se versiona y solo contiene `DATABASE_URL="file:./dev.db"`.
+
+### Rutas
+
+- `/` — panel general.
+- `/proveedor` — portal del proveedor: agendamiento, etiquetas QR y estado actual de bultos. Credenciales de ejemplo en `prisma/seed.mjs` (p. ej. `ventas@papeleranacional.mx` / `Papel2026*`).
+- `/handheld` — terminal de escaneo QR (muestra los 7 campos de la etiqueta, valida contra la OC y permite escanear otro QR).
+- `/embarques` — acomodo en racks y control de embarques.
+- `/api/cedis` — API JSON del CEDIS.
+
+### Solución de problemas
+
+- Si `pnpm` no existe: `corepack enable` y usa siempre `corepack pnpm ...`.
+- Si Prisma reporta campos desconocidos (`nivel`, `columna`) o el cliente está desactualizado, con el servidor detenido ejecuta `corepack pnpm exec prisma generate` y `corepack pnpm exec prisma db push`.
+- Si el puerto 3000 está ocupado, detén la instancia anterior de `next dev` antes de levantar otra.
