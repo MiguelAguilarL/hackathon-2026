@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma, CEDIS_RULES } from "@/lib/prisma";
 import {
-<<<<<<< Updated upstream
   RACK_NIVELES,
   RACK_COLUMNAS,
   TARIMA_PESO_MAX_KG,
@@ -20,6 +19,14 @@ import {
   RACKS_MEDIA,
   RACKS_LEJOS,
 } from "@/app/embarques/cedisLayout";
+import {
+  aMinutos,
+  desdeMinutos,
+  formatearHora,
+  formatearDuracion,
+  conflictoHorario,
+  hayTraslape,
+} from "@/lib/horarios";
 
 function metaRack() {
   return {
@@ -41,21 +48,13 @@ function metaRack() {
       modulosDobles: listarModulosDobles(),
     },
   };
-=======
-  aMinutos,
-  desdeMinutos,
-  formatearHora,
-  formatearDuracion,
-  conflictoHorario,
-  hayTraslape,
-} from "@/lib/horarios";
+}
 
 class ErrorValidacion extends Error {
   constructor(mensaje) {
     super(mensaje);
     this.status = 400;
   }
->>>>>>> Stashed changes
 }
 
 // GET /api/cedis -> Obtiene estado general (OCs con Proveedor, Catálogo de Productos, Citas/Facturas, Sucursales y Embarques)

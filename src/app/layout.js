@@ -33,7 +33,7 @@ export default function RootLayout({ children }) {
                 href="/embarques"
                 className="px-3 py-1.5 rounded-md bg-blue-700 hover:bg-blue-600 transition font-medium"
               >
-                4. Racks y Embarques (Regla 90%)
+                4. Racks y Embarques
               </Link>
             </nav>
           </div>
