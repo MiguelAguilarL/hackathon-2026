@@ -12,7 +12,7 @@ Documento rector de lineamientos, reglas de negocio y directrices operativas par
    - Cada instrucción, prompt clave, generación de arquitectura, código relevante o diseño técnico generado por o para la IA debe documentarse en la tabla de trazabilidad de `BITACORA.md`.
    - Registrar: Fecha/Hora, Fase/Actividad, Herramienta de IA, Prompt o instrucción clave y resultado/validación humana.
 4. **Stack Tecnológico Oficial (Opción 1 - Monolito Full-Stack Web):**
-   - **Framework Principal:** **Next.js (App Router)** con **React** y **TypeScript**, gestionado estrictamente con **`pnpm`**.
+   - **Framework Principal:** **Next.js (App Router)** con **React** y **JavaScript (ES6+)**, gestionado estrictamente con **`pnpm`**.
    - **Estilos e Interfaz de Usuario (UI):** **Tailwind CSS**, componentes **shadcn/ui** y **Lucide Icons** (incluyendo vistas responsivas tipo PWA/Terminal Industrial para `/handheld` y hojas de impresión `@media print` / `react-to-print` para PDF y láser).
    - **Base de Datos y ORM:** **Prisma ORM** con **SQLite** (`dev.db` para desarrollo local rápido sin fricción) o **PostgreSQL** (Supabase/Neon para sincronización en vivo entre dispositivos).
    - **Librerías Operativas Clave:** `qrcode.react` (generación de etiquetas QR de bultos y QR maestro de Relación de Embarque) y `html5-qrcode` / `@yudiel/react-qr-scanner` (lectura de QR por cámara en terminal portátil más soporte de entrada de escáner láser/simulador).

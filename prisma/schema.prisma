@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Sucursal {
+  id           Int          @id
+  codigo       String       @unique
+  nombre       String
+  rackAsignado String       @unique
+  bultos       Bulto[]
+  embarques    Embarque[]
+  lineasOC     LineaOC[]
+}
+
+model OrdenCompra {
+  idOc        String        @id
+  proveedor   String
+  fechaEmision DateTime     @default(now())
+  estado      String        @default("PENDIENTE")
+  lineas      LineaOC[]
+  citaFactura CitaFactura?
+  bultos      Bulto[]
+}
+
+model LineaOC {
+  id            Int         @id @default(autoincrement())
+  idOc          String
+  sku           String
+  descripcion   String
+  sucursalId    Int
+  piezasPedidas Int
+  ordenCompra   OrdenCompra @relation(fields: [idOc], references: [idOc])
+  sucursal      Sucursal    @relation(fields: [sucursalId], references: [id])
+}
+
+model CitaFactura {
+  id            Int         @id @default(autoincrement())
+  idOc          String      @unique
+  folioFactura  String      @unique
+  proveedor     String
+  anden         Int
+  fecha         String
+  horaInicio    Int
+  duracionHoras Int
+  estado        String      @default("PROGRAMADA")
+  ordenCompra   OrdenCompra @relation(fields: [idOc], references: [idOc])
+  bultos        Bulto[]
+}
+
+model Bulto {
+  idBulto       String       @id
+  folioFactura  String
+  idOc          String
+  proveedor     String
+  sucursalId    Int
+  sku           String
+  descripcion   String       @default("")
+  piezas        Int
+  pesoKg        Float
+  volumenM3     Float
+  estado        String       @default("PENDIENTE_RECIBO")
+  motivoRechazo String?
+  embarqueId    String?
+  citaFactura   CitaFactura  @relation(fields: [folioFactura], references: [folioFactura])
+  ordenCompra   OrdenCompra  @relation(fields: [idOc], references: [idOc])
+  sucursal      Sucursal     @relation(fields: [sucursalId], references: [id])
+  embarque      Embarque?    @relation(fields: [embarqueId], references: [idEmbarque])
+}
+
+model Embarque {
+  idEmbarque        String   @id
+  sucursalId        Int
+  andenSalida       Int
+  pesoTotalKg       Float
+  volumenTotalM3    Float
+  porcentajePeso    Float
+  porcentajeVolumen Float
+  fechaSalida       DateTime @default(now())
+  sucursal          Sucursal @relation(fields: [sucursalId], references: [id])
+  bultos            Bulto[]
+}
