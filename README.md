@@ -36,7 +36,7 @@ Datos clave del CEDIS
 Andenes: 4 de recibo y 3 de embarque a sucursales.
 - Operación diaria: ~35 camiones recibidos y ~20 unidades embarcadas por día; atención de 8:00 a 18:00.
 - Racks: 32 sucursales, 1 rack por sucursal (1 lado): 4 niveles × 8 tarimas = 32 tarimas por rack.
-- Tarima: 1.12 × 1.15 m, altura máxima 1.85 m incluyendo tarima, capacidad mínima 1,000 kg.
+- Tarima: 1.12 × 1.15 m, altura máxima 1.85 m incluyendo tarima, capacidad máxima 1,000 kg.
 - Unidad más usada: Tortón, se llena con 12 tarimas.
 Reglas
 - Las citas se agendan por andén en horario corrido de 8:00 a 18:00. La descarga toma mínimo 1 hora (el proveedor estima el tiempo total) y no puede haber dos entregas en el mismo andén y horario.

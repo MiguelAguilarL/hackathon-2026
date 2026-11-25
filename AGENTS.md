@@ -11,7 +11,15 @@ Documento rector de lineamientos, reglas de negocio y directrices operativas par
 3. **Registro de Prompts en [BITACORA.md](file:///C:/Users/Dell%20Latitude%207420/Desktop/hackathon-2026/BITACORA.md):**
    - Cada instrucción, prompt clave, generación de arquitectura, código relevante o diseño técnico generado por o para la IA debe documentarse en la tabla de trazabilidad de `BITACORA.md`.
    - Registrar: Fecha/Hora, Fase/Actividad, Herramienta de IA, Prompt o instrucción clave y resultado/validación humana.
-4. **Enfoque modular y agnóstico de tecnologías:** Como la pila tecnológica aún está por definirse, cualquier propuesta arquitectónica o código debe mantener bajo acoplamiento, alta modularidad y separación clara entre frontend, backend, base de datos y servicios de apoyo.
+4. **Stack Tecnológico Oficial (Opción 1 - Monolito Full-Stack Web):**
+   - **Framework Principal:** **Next.js (App Router)** con **React** y **TypeScript**, gestionado estrictamente con **`pnpm`**.
+   - **Estilos e Interfaz de Usuario (UI):** **Tailwind CSS**, componentes **shadcn/ui** y **Lucide Icons** (incluyendo vistas responsivas tipo PWA/Terminal Industrial para `/handheld` y hojas de impresión `@media print` / `react-to-print` para PDF y láser).
+   - **Base de Datos y ORM:** **Prisma ORM** con **SQLite** (`dev.db` para desarrollo local rápido sin fricción) o **PostgreSQL** (Supabase/Neon para sincronización en vivo entre dispositivos).
+   - **Librerías Operativas Clave:** `qrcode.react` (generación de etiquetas QR de bultos y QR maestro de Relación de Embarque) y `html5-qrcode` / `@yudiel/react-qr-scanner` (lectura de QR por cámara en terminal portátil más soporte de entrada de escáner láser/simulador).
+   - **Arquitectura Modular por Rutas (Vertical Slicing):**
+     - `/proveedor`: Agendamiento de citas en andenes (1-4), registro de factura única ligada a OC, desglose de bultos y generación de etiquetas QR.
+     - `/handheld`: Validación física en andén mediante escaneo QR, rechazo inmediato por discrepancias (SKU no solicitado o excedente) y reporte de faltantes.
+     - `/embarques` (y `/dashboard`): Control de los 32 racks (1 por sucursal), consolidador de Tortón (candado del $\ge 90\%$ en peso $[10,800\text{ kg}]$ y volumen $[25.73\text{ m}^3]$ sobre capacidad máxima de $12\text{ tarimas} / 12,000\text{ kg}$) y emisión de Relación de Embarque (PDF/Impresión Láser).
 
 ---
 
@@ -24,8 +32,8 @@ Basado en la problemática descrita en [README.md](file:///C:/Users/Dell%20Latit
 - **Andenes:** 4 andenes de recibo (proveedores) y 3 andenes de embarque (hacia sucursales).
 - **Operación Diaria:** Horario de atención corrido de 08:00 a 18:00 hrs. Recepción de ~35 camiones/día y salida de ~20 unidades/día.
 - **Racks y Sucursales:** 32 sucursales destino. Cada sucursal cuenta con 1 rack asignado (4 niveles × 8 tarimas = capacidad de 32 tarimas por rack).
-- **Especificaciones de Tarima:** Dimensiones 1.12 m × 1.15 m; altura máx. 1.85 m (incluida la tarima); peso mínimo/capacidad 1,000 kg. Deben venir sujetas con film de seguridad y respetar la base sin rebasar altura permitida.
-- **Transporte principal:** Camión Tortón (capacidad estándar: 12 tarimas).
+- **Especificaciones de Tarima:** Dimensiones 1.12 m × 1.15 m; altura máx. 1.85 m (incluida la tarima); capacidad máxima de 1,000 kg (1 tonelada) por tarima. Deben venir sujetas con film de seguridad y respetar la base sin rebasar altura permitida.
+- **Transporte principal:** Camión Tortón (capacidad estándar: **12 tarimas** y capacidad máxima de carga: **12 toneladas / 12,000 kg**).
 
 ### B. Reglas de los 4 Momentos Operativos
 
