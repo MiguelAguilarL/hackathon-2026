@@ -186,7 +186,7 @@ async function main() {
       idProveedor: 1,
       lineas: [
         { sku: "PAP-BOND-CARTA", descripcion: "Caja Papel Bond Blancura 99 Tamaño Carta (10 resmas de 500 hojas)", sucursalId: 1, piezasPedidas: 430 },
-        { sku: "PAP-BOND-OFICIO", descripcion: "Caja Papel Bond Tamaño Oficio (10 resmas de 500 hojas)", sucursalId: 1, piezasPedidas: 34 },
+        { sku: "PAP-BOND-OFICIO", descripcion: "Caja Papel Bond Tamaño Oficio (10 resmas de 500 hojas)", sucursalId: 1, piezasPedidas: 30 },
         { sku: "PAP-OPALINA-100", descripcion: "Caja Cartulina Opalina Blanca 225g (20 paquetes de 100 hojas)", sucursalId: 2, piezasPedidas: 30 },
       ],
     },
@@ -259,8 +259,7 @@ async function main() {
               volumenM3: 23.65,
               estado: "EN_RACK",
             },
-            // Bulto pendiente en andén: 34 cajas de Papel Bond Oficio (34 * 28 kg = 952 kg; 34 * 0.065 m3 = 2.21 m3)
-            // Al escanearlo en /handheld sube RACK-01 a 11,057 kg (92.1%) y 25.86 m3 (90.4%) -> Desbloquea el Tortón (>=90%)
+            // Bulto pendiente: 30 cajas Oficio (30 * 28 kg = 840 kg; 30 * 0.065 m3 = 1.95 m3) — cabe en 1 tarima (≤1000 kg / ≤2.13 m³)
             {
               idBulto: "BUL-CFDI-PBN-2026-0001-02",
               idOc: "OC-2026-001",
@@ -268,9 +267,9 @@ async function main() {
               sucursalId: 1,
               sku: "PAP-BOND-OFICIO",
               descripcion: "Caja Papel Bond Tamaño Oficio (10 resmas de 500 hojas)",
-              piezas: 34,
-              pesoKg: 952,
-              volumenM3: 2.21,
+              piezas: 30,
+              pesoKg: 840,
+              volumenM3: 1.95,
               estado: "PENDIENTE_RECIBO",
             },
             // Bulto para Sucursal 02: 30 cajas de Cartulina Opalina (30 * 16 kg = 480 kg; 30 * 0.042 m3 = 1.26 m3)

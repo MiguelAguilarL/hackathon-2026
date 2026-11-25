@@ -1,48 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  TARIMA_PESO_MAX_KG,
-  TARIMA_VOLUMEN_UTIL_M3,
-  TARIMA_LARGO_M,
-  TARIMA_ANCHO_M,
-} from "../rackRules";
-import { evaluarAcomodoEnSlot } from "../rackCapacity";
-
-const AREA_PISO_M2 = TARIMA_LARGO_M * TARIMA_ANCHO_M;
+import { TARIMA_PESO_MAX_KG, TARIMA_VOLUMEN_UTIL_M3 } from "../rackRules";
+import { evaluarAcomodoEnSlot, sugerirTarimaEnRack } from "../rackCapacity";
 
 function sumar(bultos, campo) {
   return bultos.reduce((acc, b) => acc + (Number(b[campo]) || 0), 0);
 }
 
-/** Interpreta el texto del QR (JSON de etiqueta) o un idBulto / SKU suelto. */
+/** Interpreta el QR (JSON de etiqueta) o el idBulto en texto plano. */
 export function interpretarEntradaBulto(texto) {
   const raw = String(texto || "").trim();
   if (!raw) return { tipo: "vacio" };
 
   try {
     const obj = JSON.parse(raw);
-    if (obj && typeof obj === "object") {
-      if (obj.idBulto) {
-        return {
-          tipo: "idBulto",
-          idBulto: String(obj.idBulto).trim(),
-          sku: obj.sku ? String(obj.sku).trim() : undefined,
-        };
-      }
-      if (obj.sku) {
-        return { tipo: "sku", sku: String(obj.sku).trim() };
-      }
+    if (obj && typeof obj === "object" && obj.idBulto) {
+      return { tipo: "idBulto", idBulto: String(obj.idBulto).trim() };
     }
   } catch {
-    // texto plano
+    // texto plano = id del bulto
   }
 
-  if (/^BUL[-_]/i.test(raw) || raw.includes("BUL-")) {
-    return { tipo: "idBulto", idBulto: raw };
-  }
-
-  return { tipo: "sku", sku: raw };
+  return { tipo: "idBulto", idBulto: raw };
 }
 
 function BarraUso({ pct, ok }) {
@@ -57,20 +37,22 @@ function BarraUso({ pct, ok }) {
 }
 
 /**
- * Panel bajo el rack: ocupación de la tarima + escanear QR / SKU + verificar + guardar.
+ * Panel bajo el rack: ocupación de la tarima + escanear / pegar id QR + guardar.
  */
 export default function TarimaPanel({
   nivel,
   columna,
   bultosEnSlot = [],
+  bultosEnRack = [],
   bultosCandidatos = [],
+  todosLosBultos = [],
+  sucursales = [],
   sucursalId,
   onAcomodar,
   ocupado = false,
   onCerrar,
 }) {
   const [modoScan, setModoScan] = useState(false);
-  const [skuManual, setSkuManual] = useState("");
   const [qrPegado, setQrPegado] = useState("");
   const [bulto, setBulto] = useState(null);
   const [mensaje, setMensaje] = useState(null);
@@ -78,21 +60,20 @@ export default function TarimaPanel({
   const scannerRef = useRef(null);
   const ultimoQrRef = useRef("");
   const candidatosRef = useRef(bultosCandidatos);
+  const todosRef = useRef(todosLosBultos);
+  const sucursalesRef = useRef(sucursales);
   candidatosRef.current = bultosCandidatos;
+  todosRef.current = todosLosBultos;
+  sucursalesRef.current = sucursales;
 
   const ocupacion = useMemo(() => {
     const pesoUsado = sumar(bultosEnSlot, "pesoKg");
     const volUsado = sumar(bultosEnSlot, "volumenM3");
-    const areaUsadaApprox =
-      TARIMA_VOLUMEN_UTIL_M3 > 0
-        ? AREA_PISO_M2 * Math.min(1, volUsado / TARIMA_VOLUMEN_UTIL_M3)
-        : 0;
     return {
       pesoUsado,
       pesoLibre: Math.max(0, TARIMA_PESO_MAX_KG - pesoUsado),
       volUsado,
       volLibre: Math.max(0, TARIMA_VOLUMEN_UTIL_M3 - volUsado),
-      areaUsadaApprox,
       pctPeso: (pesoUsado / TARIMA_PESO_MAX_KG) * 100,
       pctVol: (volUsado / TARIMA_VOLUMEN_UTIL_M3) * 100,
     };
@@ -107,6 +88,14 @@ export default function TarimaPanel({
     });
   }, [bulto, bultosEnSlot]);
 
+  const sugerenciaTarima = useMemo(() => {
+    if (!bulto || evaluacion?.ok) return null;
+    return sugerirTarimaEnRack({
+      bultosAAcomodar: [bulto],
+      bultosEnRack,
+    });
+  }, [bulto, evaluacion, bultosEnRack]);
+
   const yaEstaEnEstaTarima =
     bulto &&
     bultosEnSlot.some((b) => b.idBulto === bulto.idBulto);
@@ -117,43 +106,62 @@ export default function TarimaPanel({
     !yaEstaEnEstaTarima &&
     !ocupado;
 
+  const mensajeNoCabe = useMemo(() => {
+    if (!bulto || evaluacion?.ok || yaEstaEnEstaTarima) return null;
+    const motivo = evaluacion?.motivo || "sin capacidad.";
+    if (sugerenciaTarima?.ok) {
+      const misma =
+        sugerenciaTarima.nivel === nivel && sugerenciaTarima.columna === columna;
+      if (!misma) {
+        return `No cabe aquí: ${motivo} Prueba N${sugerenciaTarima.nivel}-C${sugerenciaTarima.columna} (hay espacio).`;
+      }
+    }
+    if (sugerenciaTarima && !sugerenciaTarima.ok) {
+      return `No cabe aquí: ${motivo} ${sugerenciaTarima.motivo}`;
+    }
+    return `No cabe aquí: ${motivo}`;
+  }, [bulto, evaluacion, sugerenciaTarima, yaEstaEnEstaTarima, nivel, columna]);
+
   const resolverBulto = (entrada) => {
     setMensaje(null);
-    const parsed = typeof entrada === "string" ? interpretarEntradaBulto(entrada) : entrada;
+    const parsed = interpretarEntradaBulto(entrada);
     const lista = candidatosRef.current || [];
 
-    if (!parsed || parsed.tipo === "vacio") {
+    if (!parsed || parsed.tipo === "vacio" || !parsed.idBulto) {
       setBulto(null);
-      setMensaje({ tipo: "error", texto: "Ingresa un QR, id de bulto o SKU." });
+      setMensaje({ tipo: "error", texto: "Escanea o pega el id del QR del bulto." });
       return;
     }
 
-    let encontrado = null;
-    if (parsed.tipo === "idBulto" && parsed.idBulto) {
-      encontrado = lista.find((b) => b.idBulto === parsed.idBulto);
-      if (!encontrado) {
-        setBulto(null);
+    const encontrado = lista.find((b) => b.idBulto === parsed.idBulto);
+    if (!encontrado) {
+      setBulto(null);
+      const enOtra = (todosRef.current || []).find((b) => b.idBulto === parsed.idBulto);
+      if (enOtra) {
+        if (enOtra.estado === "EMBARCADO" || enOtra.estado === "RECHAZADO") {
+          setMensaje({
+            tipo: "error",
+            texto: `El bulto ${enOtra.idBulto} está ${enOtra.estado} y no se puede acomodar.`,
+          });
+          return;
+        }
+        const dest =
+          (sucursalesRef.current || []).find(
+            (s) => Number(s.id) === Number(enOtra.sucursalId)
+          ) || enOtra.sucursal;
+        const rack = dest?.rackAsignado || `sucursal ${enOtra.sucursalId}`;
+        const nombre = dest?.nombre ? ` · ${dest.nombre}` : "";
         setMensaje({
           tipo: "error",
-          texto: `No hay bulto ${parsed.idBulto} disponible para esta tienda.`,
+          texto: `Este bulto no es de este rack. Le corresponde ${rack}${nombre}. Ábrelo ahí.`,
         });
         return;
       }
-    } else if (parsed.sku) {
-      const skuNorm = parsed.sku.toUpperCase();
-      const matches = lista.filter(
-        (b) => String(b.sku).toUpperCase() === skuNorm
-      );
-      if (matches.length === 0) {
-        setBulto(null);
-        setMensaje({
-          tipo: "error",
-          texto: `No hay bulto con SKU "${parsed.sku}" pendiente para esta tienda.`,
-        });
-        return;
-      }
-      encontrado =
-        matches.find((b) => b.nivel == null || b.columna == null) || matches[0];
+      setMensaje({
+        tipo: "error",
+        texto: `No existe el bulto ${parsed.idBulto} en la base de datos de este CEDIS.`,
+      });
+      return;
     }
 
     setBulto(encontrado);
@@ -212,7 +220,7 @@ export default function TarimaPanel({
       } catch (err) {
         setErrorCamara(
           err?.message ||
-            "No se pudo abrir la cámara. Usa pegar QR o ingresar SKU."
+            "No se pudo abrir la cámara. Pega el id del QR abajo."
         );
       }
     };
@@ -239,7 +247,6 @@ export default function TarimaPanel({
   useEffect(() => {
     setBulto(null);
     setMensaje(null);
-    setSkuManual("");
     setQrPegado("");
     setModoScan(false);
   }, [nivel, columna]);
@@ -255,7 +262,6 @@ export default function TarimaPanel({
     });
     if (result?.ok) {
       setBulto(null);
-      setSkuManual("");
       setQrPegado("");
       setMensaje({
         tipo: "ok",
@@ -310,10 +316,6 @@ export default function TarimaPanel({
           <p className="text-xs text-slate-600 tabular-nums">
             Libre: {ocupacion.volLibre.toFixed(2)} m³
           </p>
-          <p className="text-[11px] text-slate-500 tabular-nums">
-            Área de piso: {ocupacion.areaUsadaApprox.toFixed(2)} / {AREA_PISO_M2.toFixed(2)} m²
-            <span className="text-slate-400"> (aprox. por ocupación)</span>
-          </p>
         </div>
 
         <div className="rounded-md border border-slate-100 bg-slate-50 p-3 space-y-2">
@@ -348,7 +350,7 @@ export default function TarimaPanel({
         </ul>
       )}
 
-      {/* Entrada: QR / SKU */}
+      {/* Entrada: solo id del QR */}
       <div className="border-t border-slate-100 pt-3 space-y-3">
         <p className="text-xs font-semibold text-slate-700">Agregar bulto a esta tarima</p>
 
@@ -381,12 +383,12 @@ export default function TarimaPanel({
         )}
 
         <label className="block text-xs space-y-1">
-          <span className="font-semibold text-slate-700">O pega el QR / id de bulto</span>
+          <span className="font-semibold text-slate-700">O pega el id del QR</span>
           <div className="flex gap-2">
             <input
               value={qrPegado}
               onChange={(e) => setQrPegado(e.target.value)}
-              placeholder='{"idBulto":"BUL-…"} o BUL-…'
+              placeholder="BUL-CFDI-… o el JSON del QR"
               className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
             />
             <button
@@ -395,25 +397,6 @@ export default function TarimaPanel({
               className="px-3 py-2 rounded-lg text-xs font-bold border border-slate-300 bg-slate-50 hover:bg-slate-100"
             >
               Leer
-            </button>
-          </div>
-        </label>
-
-        <label className="block text-xs space-y-1">
-          <span className="font-semibold text-slate-700">O ingresa el SKU</span>
-          <div className="flex gap-2">
-            <input
-              value={skuManual}
-              onChange={(e) => setSkuManual(e.target.value)}
-              placeholder="ej. PAP-BOND-OFICIO"
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm uppercase"
-            />
-            <button
-              type="button"
-              onClick={() => resolverBulto({ tipo: "sku", sku: skuManual.trim() })}
-              className="px-3 py-2 rounded-lg text-xs font-bold border border-slate-300 bg-slate-50 hover:bg-slate-100"
-            >
-              Buscar
             </button>
           </div>
         </label>
@@ -442,9 +425,7 @@ export default function TarimaPanel({
               {evaluacion.resumen.volumenLibreM3.toFixed(2)} m³
             </p>
           ) : (
-            <p className="text-xs font-semibold text-red-800">
-              No se puede: {evaluacion?.motivo || "sin capacidad."}
-            </p>
+            <p className="text-xs font-semibold text-red-800">{mensajeNoCabe}</p>
           )}
         </div>
       )}

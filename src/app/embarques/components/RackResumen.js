@@ -1,5 +1,4 @@
 import { RACK_MAX_TARIMAS } from "../rackRules";
-import { proximidadDeRack, PROXIMIDAD_INFO } from "../cedisLayout";
 
 const ESTADO_TORTON = {
   vacio: { label: "Rack vacío", clase: "bg-slate-100 text-slate-700 border-slate-200" },
@@ -22,8 +21,6 @@ export default function RackResumen({ sucursal, resumen }) {
   const slotsOcupados = contarSlotsOcupados(bultos);
   const slotsLibres = RACK_MAX_TARIMAS - slotsOcupados;
   const estadoUi = ESTADO_TORTON[resumen.estado] || ESTADO_TORTON.vacio;
-  const proximidad = proximidadDeRack(sucursal.rackAsignado);
-  const infoProx = proximidad ? PROXIMIDAD_INFO[proximidad] : null;
 
   return (
     <section className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/80 p-5">
@@ -33,13 +30,6 @@ export default function RackResumen({ sucursal, resumen }) {
           {estadoUi.label}
         </span>
       </div>
-
-      {infoProx && (
-        <div className="rounded-lg bg-white border border-slate-200 px-3 py-2.5 text-xs">
-          <p className="font-bold text-slate-800">{infoProx.nombre}</p>
-          <p className="text-slate-500 mt-0.5">{infoProx.descripcion}</p>
-        </div>
-      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg bg-white border border-slate-200 p-3">

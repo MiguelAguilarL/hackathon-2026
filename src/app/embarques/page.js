@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { resumenRack } from "./torton";
 import { useEmbarques } from "./useEmbarques";
-import { numeroDeRack, etiquetaRack, proximidadDeRack, PROXIMIDAD_INFO } from "./cedisLayout";
+import { numeroDeRack, etiquetaRack } from "./cedisLayout";
 import EmbarquesHeader from "./components/EmbarquesHeader";
 import CedisPlano from "./components/CedisPlano";
 import RackResumen from "./components/RackResumen";
@@ -85,14 +85,9 @@ export default function EmbarquesPage() {
         {sucursalInspectada && resumenInspectada ? (
           <div className="space-y-4 border-t border-slate-200 pt-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-bold text-slate-800">
-                  {etiquetaRack(rackSeleccionadoNum)} · {sucursalInspectada.nombre}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  {PROXIMIDAD_INFO[proximidadDeRack(rackSeleccionadoNum)]?.nombre || ""}
-                </p>
-              </div>
+              <h2 className="text-sm font-bold text-slate-800">
+                {etiquetaRack(rackSeleccionadoNum)} · {sucursalInspectada.nombre}
+              </h2>
               <button
                 type="button"
                 onClick={() => setRackSeleccionadoNum(null)}
@@ -105,6 +100,8 @@ export default function EmbarquesPage() {
             <RackVista
               sucursal={sucursalInspectada}
               bultosCandidatos={bultosCandidatos}
+              todosLosBultos={data.bultos || []}
+              sucursales={sucursales}
               onAcomodar={acomodarBultos}
               acomodando={acomodando}
             />

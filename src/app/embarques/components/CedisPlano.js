@@ -77,13 +77,7 @@ export default function CedisPlano({
   return (
     <section className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-bold text-slate-800">Plano CEDIS · racks por sucursal</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Bloques 2×2: <span className="font-bold">X</span> hacia puertas · racks en pares
-            consecutivos (1-2, 3-4…). Clic para ver tarimas.
-          </p>
-        </div>
+        <h2 className="text-sm font-bold text-slate-800">Plano CEDIS · racks por sucursal</h2>
         <ul className="flex flex-wrap gap-2 text-[10px]">
           {Object.values(PROXIMIDAD_INFO).map((p) => (
             <li
