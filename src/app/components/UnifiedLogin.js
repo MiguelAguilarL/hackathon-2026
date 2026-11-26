@@ -92,7 +92,7 @@ export default function UnifiedLogin() {
     <div className="max-w-6xl mx-auto py-6 space-y-6">
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <span className="text-[11px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded">
-          CEDIS Catlovers · Acceso único
+          CEDIS MJJO · Acceso único
         </span>
         <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 mt-3">
           Inicia sesión para continuar

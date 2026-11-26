@@ -40,7 +40,7 @@ export default function RelacionEmbarque({ embarque }) {
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b-2 border-slate-900 pb-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
-            CEDIS Catlovers · Relación de embarque a sucursal
+            CEDIS MJJO · Relación de embarque a sucursal
           </p>
           <h3 className="text-2xl font-black font-mono mt-1">{embarque.idEmbarque}</h3>
           <p className="text-sm font-semibold mt-1">

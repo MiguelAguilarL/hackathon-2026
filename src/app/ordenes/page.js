@@ -125,7 +125,7 @@ export default function OrdenesPage() {
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-[240px]">
           <span className="text-[11px] font-black uppercase tracking-wider bg-blue-600 text-white px-2.5 py-1 rounded">
-            Órdenes · Personal Catlovers
+            Órdenes · Personal CEDIS MJJO
           </span>
           <h1 className="text-xl md:text-2xl font-extrabold text-slate-900 mt-2">
             Simulador de Orden de Compra con Catálogo

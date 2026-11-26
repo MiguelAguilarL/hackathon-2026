@@ -137,7 +137,7 @@ export default function QrLabelsSheet({
               <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-mono uppercase text-amber-400 block">
-                    CEDIS CATLOVERS · ETIQUETA DE BULTO
+                    CEDIS MJJO · ETIQUETA DE BULTO
                   </span>
                   <span className="font-mono font-black text-sm tracking-tight">{bulto.idBulto}</span>
                 </div>

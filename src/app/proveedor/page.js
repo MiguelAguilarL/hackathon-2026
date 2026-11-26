@@ -361,7 +361,7 @@ export default function ProveedorPage() {
       <div className="no-print bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded shrink-0">
-            CEDIS Papelería · Momentos 1 y 2
+            CEDIS MJJO · Momentos 1 y 2
           </span>
           <h1 className="text-lg md:text-xl lg:text-2xl font-extrabold text-slate-900 lg:whitespace-nowrap">
             Portal de Proveedores: Citas, Facturación CFDI y Cubicación Automática
