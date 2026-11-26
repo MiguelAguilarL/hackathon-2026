@@ -50,31 +50,72 @@ Reglas
 
 ---
 
-## Cómo ejecutar el prototipo
+## Cómo ejecutar el prototipo (Paso a Paso con Node.js y `npm`)
 
-Requisitos: Node.js 20+ con Corepack. **Trabaja siempre dentro de la carpeta `hackathon-2026`** (el `package.json` está ahí; ejecutar los comandos desde la carpeta padre falla con `ENOENT`).
+Para correr este proyecto **solo necesitas tener instalado [Node.js](https://nodejs.org/)** (versión 18 o superior), el cual ya incluye **`npm`** por defecto. No necesitas instalar ningún servidor de base de datos externo (usa SQLite local autogenerado).
+
+### Paso 1: Abrir la terminal en la carpeta del proyecto
+Abre una terminal (PowerShell, CMD o Terminal) y asegúrate de ubicarte dentro de la carpeta `hackathon-2026` (donde se encuentra el archivo `package.json`):
 
 ```bash
 cd hackathon-2026
-corepack enable          # solo si "pnpm" no está en PATH
-corepack pnpm install    # instala dependencias y genera el Prisma Client
-corepack pnpm db:setup   # crea prisma/dev.db, aplica el esquema y carga el seed
-corepack pnpm dev        # abre http://localhost:3000
 ```
 
-No uses `npm install` ni `npm run dev`: el proyecto usa **`pnpm` de forma obligatoria** (ver `AGENTS.md`). `prisma/dev.db`, `.next/` y `node_modules/` están en `.gitignore`, así que cada persona genera su propia base de datos con `db:setup`. El archivo `.env` sí se versiona y solo contiene `DATABASE_URL="file:./dev.db"`.
+### Paso 2: Instalar las dependencias del proyecto
+Ejecuta el siguiente comando para descargar e instalar todas las librerías necesarias:
 
-### Acceso y rutas
+```bash
+npm install
+```
 
-El acceso es **único** y está en `/`: selecciona tu perfil y, al iniciar sesión, serás redirigido solo a tu módulo. El middleware bloquea el resto de rutas (redirige a `/`).
+### Paso 3: Crear y poblar la Base de Datos (SQLite)
+Ejecuta este comando para generar el cliente de Prisma, crear automáticamente el archivo de base de datos `prisma/dev.db` y cargar los datos iniciales (las 32 sucursales/racks, proveedores, catálogo de productos y órdenes de compra de prueba):
 
-- **Proveedor** → `/proveedor`: agendamiento, facturación CFDI, etiquetas QR y estado de bultos. Cuentas demo en `prisma/seed.mjs` (p. ej. `ventas@papeleranacional.mx` / `Papel2026*`).
-- **Personal de Órdenes de Compra** → `/ordenes`: simulador de OC con catálogo. Cuentas demo: `compras@catlovers.mx` / `Compras2026*`, `cedis@catlovers.mx` / `Cedis2026*` y `almacen@catlovers.mx` / `Almacen2026*`.
-- **Personal de Bodega** → `/embarques`: acomodo en racks y control de embarques. Cuentas demo: `bodega@catlovers.mx` / `Bodega2026*`, `rack@catlovers.mx` / `Rack2026*` y `embarques@catlovers.mx` / `Embarques2026*`.
-- `/api/cedis` — API JSON del CEDIS.
+```bash
+npm run db:setup
+```
+*(Nota: Si en algún momento deseas reiniciar la base de datos desde cero con los datos originales de fábrica, puedes ejecutar `npx prisma db push --force-reset && npm run db:seed`).*
 
-### Solución de problemas
+### Paso 4: Iniciar el servidor de desarrollo
+Levanta la aplicación con:
 
-- Si `pnpm` no existe: `corepack enable` y usa siempre `corepack pnpm ...`.
-- Si Prisma reporta campos desconocidos (`nivel`, `columna`) o el cliente está desactualizado, con el servidor detenido ejecuta `corepack pnpm exec prisma generate` y `corepack pnpm exec prisma db push`.
-- Si el puerto 3000 está ocupado, detén la instancia anterior de `next dev` antes de levantar otra.
+```bash
+npm run dev
+```
+
+### Paso 5: Abrir la aplicación en el navegador
+Abre tu navegador web y entra a:
+👉 **[http://localhost:3000](http://localhost:3000)**
+
+---
+
+### Acceso y Perfiles de Prueba (Demo)
+
+El sistema cuenta con un **Acceso Único en `/`** (`http://localhost:3000`). En la pantalla de login puedes hacer clic directamente sobre cualquiera de las **Cuentas Demo** del panel derecho para autocompletar su correo y contraseña con un clic:
+
+1. **Perfil Proveedor (`/proveedor`):** Agendamiento de citas en los 4 andenes sin traslapes, generación automática de factura CFDI, cálculo automático de peso y volumen por caja, impresión de etiquetas QR y seguimiento de bultos.
+   - `ventas@papeleranacional.mx` / `Papel2026*`
+   - `logistica@escolardelcentro.mx` / `Escolar2026*`
+   - `entregas@escrituraglobal.mx` / `Oficina2026*`
+   - `cedis@arteydidacticos.mx` / `Arte2026*`
+2. **Perfil Personal de Órdenes de Compra (`/ordenes`):** Emisión de nuevas Órdenes de Compra hacia los proveedores usando su catálogo de productos.
+   - `compras@catlovers.mx` / `Compras2026*`
+   - `cedis@catlovers.mx` / `Cedis2026*`
+3. **Perfil Personal de Bodega (`/embarques`):** Mapa del CEDIS, acomodo en los 32 racks (1 por sucursal), consolidador de camión Tortón con candado del $\ge 90\%$ en peso y volumen, y emisión de Relación de Embarque en PDF/Láser con QR maestro.
+   - `bodega@catlovers.mx` / `Bodega2026*`
+   - `embarques@catlovers.mx` / `Embarques2026*`
+4. **Terminal Portátil de Andén (`/handheld`):** Escáner de códigos QR por cámara o entrada manual con validación de cero tolerancia a discrepancias (rechazo inmediato de SKUs no pedidos o excedentes) y auditoría de faltantes.
+   - URL directa: **[http://localhost:3000/handheld](http://localhost:3000/handheld)**
+
+---
+
+### Comandos útiles adicionales (Opcionales)
+
+- **Ver la base de datos en tiempo real en el navegador (Prisma Studio):**
+  ```bash
+  npm run db:studio
+  ```
+  *(Abre un panel visual en `http://localhost:5555` para inspeccionar o editar las tablas).*
+- **Solución de problemas comunes:**
+  - Si al ejecutar `npm run db:setup` aparece un error `EPERM` en Windows, significa que el servidor `npm run dev` ya está corriendo y tiene bloqueado el cliente de Prisma. Detén primero el servidor con `Ctrl + C`, vuelve a correr `npm run db:setup` y luego inicia `npm run dev`.
+  - Si el archivo `.env` no existiera al clonar, crea un archivo llamado `.env` en la raíz con esta única línea: `DATABASE_URL="file:./dev.db"`.
