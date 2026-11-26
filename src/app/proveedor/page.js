@@ -67,6 +67,7 @@ export default function ProveedorPage() {
 
   const [data, setData] = useState(null);
   const [vistaActiva, setVistaActiva] = useState("AGENDAR"); // "AGENDAR" | "ETIQUETAS" | "CITAS" | "BULTOS"
+  const [pasoWizard, setPasoWizard] = useState(1); // 1: Orden y Factura | 2: Fecha y Horario | 3: Desglose de Cajas
 
   const [idOc, setIdOc] = useState("");
   const [folioFactura, setFolioFactura] = useState("");
@@ -168,21 +169,20 @@ export default function ProveedorPage() {
 
   if (verificandoSesion) {
     return (
-      <div className="p-8 text-center text-sm text-slate-500 font-medium">
-        Verificando sesión segura del Portal de Proveedores de Papelería...
+      <div className="p-10 text-center text-sm text-slate-500 font-medium">
+        Cargando tu portal de proveedor...
       </div>
     );
   }
 
   if (!proveedorActivo) {
     return (
-      <div className="p-8 text-center text-sm text-slate-500 font-medium">
+      <div className="p-10 text-center text-sm text-slate-500 font-medium">
         Redirigiendo al inicio de sesión...
       </div>
     );
   }
 
-  // Filtrar estrictamente las Órdenes de Compra, Productos y Citas de este proveedor (idProveedor)
   const misOrdenesCompra = (data?.ordenesCompra || []).filter(
     (oc) => Number(oc.idProveedor) === Number(proveedorActivo.idProveedor)
   );
@@ -236,7 +236,7 @@ export default function ProveedorPage() {
     setMensaje(null);
 
     if (!ocActual) {
-      setError("No tienes una Orden de Compra seleccionada.");
+      setError("Selecciona una Orden de Compra.");
       return;
     }
 
@@ -250,30 +250,29 @@ export default function ProveedorPage() {
       const [ini, fin] = rangoCita(cita);
       setError(
         traslapeAnden
-          ? `Andén #${anden} ocupado: ${cita.folioFactura} (${cita.proveedor}) de ${formatearHora(ini / 60)} a ${formatearHora(fin / 60)} hrs.`
-          : `${proveedorActivo.nombre} ya tiene una cita de ${formatearHora(ini / 60)} a ${formatearHora(fin / 60)} hrs en el Andén #${cita.anden}.`
+          ? `El Andén #${anden} ya está ocupado de ${formatearHora(ini / 60)} a ${formatearHora(fin / 60)} hrs. Elige otro horario o andén.`
+          : `Ya tienes una cita registrada de ${formatearHora(ini / 60)} a ${formatearHora(fin / 60)} hrs en el Andén #${cita.anden}.`
       );
       return;
     }
 
     if (ocYaTieneCita) {
       setError(
-        `La Orden de Compra ${idOc} ya tiene una factura asociada (${ocActual.citaFactura.folioFactura}). Selecciona otra OC o emite una nueva desde el Portal de Órdenes.`
+        `La Orden de Compra ${idOc} ya fue agendada con la factura ${ocActual.citaFactura.folioFactura}. Selecciona otra orden disponible.`
       );
       return;
     }
 
     if (folioDuplicado) {
-      setError(`El folio de factura "${folioFactura}" ya está registrado en el sistema y no se puede repetir.`);
+      setError(`El folio de factura "${folioFactura}" ya está registrado.`);
       return;
     }
 
     if (bultosForm.length === 0 || bultosForm.some((b) => !Number(b.piezas) || Number(b.piezas) <= 0)) {
-      setError("Declara al menos un bulto con una cantidad de piezas válida antes de agendar.");
+      setError("Registra al menos una caja con una cantidad de piezas válida.");
       return;
     }
 
-    // Validación final en el cliente: ninguna partida (SKU + sucursal) puede exceder la OC.
     const piezasPorPartida = new Map();
     for (const b of bultosForm) {
       const clave = `${b.sku}::${Number(b.sucursalId)}`;
@@ -285,12 +284,12 @@ export default function ProveedorPage() {
         (l) => l.sku === sku && Number(l.sucursalId) === Number(sucursalStr)
       );
       if (!linea) {
-        setError(`El SKU ${sku} para la sucursal ${sucursalStr} no fue solicitado en la OC ${idOc}.`);
+        setError(`El producto ${sku} para la sucursal ${sucursalStr} no forma parte de esta Orden de Compra.`);
         return;
       }
       if (declaradas > linea.piezasPedidas) {
         setError(
-          `Excedente no permitido: ${sku} (Sucursal ${sucursalStr}) tiene ${declaradas} pzas declaradas y la OC solo pide ${linea.piezasPedidas}.`
+          `La cantidad de ${sku} (Sucursal ${sucursalStr}) supera lo solicitado en la orden (${declaradas} de ${linea.piezasPedidas} piezas).`
         );
         return;
       }
@@ -319,7 +318,7 @@ export default function ProveedorPage() {
         setError(json.error);
       } else {
         setMensaje(
-          `¡Cita confirmada en Andén #${anden} (${formatearHora(horaInicio)} a ${formatearHora(horaInicio + duracionHoras)} hrs, ${formatearDuracion(duracionHoras)} de descarga)! Se registró tu Factura Fiscal ${json.cita.folioFactura} y se generaron ${json.cita.bultos.length} etiquetas QR.`
+          `Cita confirmada en el Andén #${anden} (${formatearHora(horaInicio)} a ${formatearHora(horaInicio + duracionHoras)} hrs). Tus ${json.cita.bultos.length} etiquetas QR están listas para imprimir.`
         );
         await cargarDatos(proveedorActivo, idOc);
         setCitaSeleccionadaQR(json.cita);
@@ -331,191 +330,238 @@ export default function ProveedorPage() {
   };
 
   const misOcsDisponiblesCount = misOrdenesCompra.filter((o) => !o.citaFactura).length;
+  const totalBultosRegistrados = misCitasFacturas.reduce((total, cita) => total + (cita.bultos?.length || 0), 0);
+
+  // Motivo claro por el cual el botón de confirmar estaría deshabilitado
+  const motivoBloqueoConfirmar = !ocActual
+    ? "No tienes ninguna Orden de Compra seleccionada en el Paso 1."
+    : ocYaTieneCita
+    ? `La orden ${ocActual.idOc} ya fue agendada anteriormente (Factura ${ocActual.citaFactura.folioFactura}). Elige otra orden pendiente en el Paso 1 o inicia sesión con otro proveedor.`
+    : folioDuplicado
+    ? `El folio de factura ${folioFactura} ya está registrado.`
+    : errorAgenda
+    ? errorAgenda
+    : traslapeAnden
+    ? `El Andén #${anden} ya está ocupado en el horario elegido (${formatearHora(horaInicio)} a ${formatearHora(horaInicio + duracionHoras)}). Cambia la hora o el andén en el Paso 2.`
+    : traslapeProveedor
+    ? `Tu empresa ya tiene otra cita registrada en ese mismo horario (Andén #${traslapeProveedor.anden}). Elige otra hora o fecha en el Paso 2.`
+    : duracionInvalida
+    ? "La duración de descarga debe ser de entre 1:00 y 2:00 hrs y terminar antes de las 18:00 hrs."
+    : null;
 
   return (
     <div className="space-y-6">
-      {/* Barra Superior de Sesión del Proveedor Autenticado */}
-      <div className="no-print bg-slate-900 text-white rounded-2xl px-6 py-3.5 border border-slate-800 flex flex-wrap items-center justify-between gap-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="bg-emerald-500 text-slate-950 font-black font-mono text-xs px-2.5 py-1 rounded">
-            SESIÓN ACTIVA · idProveedor #{proveedorActivo.idProveedor}
-          </span>
+      {/* Encabezado Único, Limpio y Claro para el Proveedor */}
+      <div className="no-print bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-extrabold text-white">{proveedorActivo.nombre}</p>
-            <p className="text-xs text-slate-400 font-mono">
-              {proveedorActivo.correo} · {misProductos.length} Productos en Catálogo · {misOrdenesCompra.length} Órdenes de Compra
-            </p>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+              Portal de Proveedores · CEDIS MJJO
+            </span>
+            <h1 className="text-lg md:text-xl font-extrabold text-white mt-0.5">
+              {proveedorActivo.nombre}
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <span className="hidden sm:inline text-xs text-slate-300">{proveedorActivo.correo}</span>
+            <button
+              type="button"
+              onClick={handleCerrarSesion}
+              className="bg-slate-800 hover:bg-red-600 text-slate-200 hover:text-white border border-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition"
+            >
+              Cerrar sesión
+            </button>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleCerrarSesion}
-          className="bg-slate-800 hover:bg-red-600 text-slate-200 hover:text-white border border-slate-700 font-extrabold text-xs px-4 py-2 rounded-xl transition"
-        >
-          Cerrar sesión
-        </button>
-      </div>
-
-      {/* Encabezado Industrial del Portal de Proveedores de Papelería */}
-      <div className="no-print bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded shrink-0">
-            CEDIS MJJO · Momentos 1 y 2
-          </span>
-          <h1 className="text-lg md:text-xl lg:text-2xl font-extrabold text-slate-900 lg:whitespace-nowrap">
-            Portal de Proveedores: Citas, Facturación CFDI y Cubicación Automática
-          </h1>
-          <span className="hidden xl:inline text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded">
-            4 Andenes de Recibo · Horario 08:00 a 18:00 hrs · Descarga de 1:00 a 2:00 hrs
-          </span>
-        </div>
-
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          <p className="text-sm text-slate-600">
-            Visualiza únicamente las Órdenes de Compra de <strong>{proveedorActivo.nombre}</strong>, con cálculo automático de peso y volumen desde tu catálogo de productos de papelería.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200 shrink-0">
+        {/* Navegación Principal del Proveedor */}
+        <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setVistaActiva("AGENDAR")}
-              className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition ${
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition ${
                 vistaActiva === "AGENDAR"
                   ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  : "text-slate-600 hover:bg-slate-200/70"
               }`}
             >
-              1. Agendar Cita y Factura ({misOcsDisponiblesCount} libres)
+              Agendar Entrega {misOcsDisponiblesCount > 0 ? `(${misOcsDisponiblesCount})` : ""}
             </button>
+
             <button
               type="button"
               onClick={() => setVistaActiva("ETIQUETAS")}
-              className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 ${
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${
                 vistaActiva === "ETIQUETAS"
                   ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  : "text-slate-600 hover:bg-slate-200/70"
               }`}
             >
-              <span>2. Mis Etiquetas QR</span>
-              <span className="bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded-full text-[10px] font-black">
-                {citaSeleccionadaQR?.bultos?.length || 0}
-              </span>
+              <span>Etiquetas QR</span>
+              {citaSeleccionadaQR?.bultos?.length > 0 && (
+                <span className="bg-amber-400 text-slate-950 px-2 py-0.2 rounded-full text-[10px] font-black">
+                  {citaSeleccionadaQR.bultos.length}
+                </span>
+              )}
             </button>
+
             <button
               type="button"
               onClick={() => setVistaActiva("CITAS")}
-              className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition ${
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition ${
                 vistaActiva === "CITAS"
                   ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  : "text-slate-600 hover:bg-slate-200/70"
               }`}
             >
-              3. Mis Citas ({misCitasFacturas.length})
+              Mis Citas ({misCitasFacturas.length})
             </button>
+
             <button
               type="button"
               onClick={() => setVistaActiva("BULTOS")}
-              className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 ${
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 ${
                 vistaActiva === "BULTOS"
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "text-emerald-700 hover:bg-emerald-50"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-200/70"
               }`}
             >
-              <span>4. Estado de Bultos</span>
-              <span className="bg-emerald-100 text-emerald-900 px-1.5 py-0.5 rounded-full text-[10px] font-black">
-                {misCitasFacturas.reduce((total, cita) => total + (cita.bultos?.length || 0), 0)}
-              </span>
+              <span>Seguimiento de Cajas</span>
+              {totalBultosRegistrados > 0 && (
+                <span className="bg-emerald-100 text-emerald-900 px-2 py-0.2 rounded-full text-[10px] font-black">
+                  {totalBultosRegistrados}
+                </span>
+              )}
             </button>
           </div>
-        </div>
 
-        {error && (
-          <div className="mt-4 p-4 rounded-xl bg-red-50 border-2 border-red-400 text-red-900 text-sm font-bold flex items-center justify-between">
-            <span>⚠️ {error}</span>
-            <button onClick={() => setError(null)} className="text-xs underline ml-4">
-              Cerrar
-            </button>
-          </div>
-        )}
-        {mensaje && (
-          <div className="mt-4 p-4 rounded-xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 text-sm font-bold flex flex-wrap items-center justify-between gap-3">
-            <span>✅ {mensaje}</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setVistaActiva("BULTOS")}
-                className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-extrabold px-3.5 py-1.5 rounded-lg"
-              >
-                Ver estado de bultos →
-              </button>
-            </div>
-          </div>
-        )}
+          <span className="text-xs text-slate-400 hidden lg:inline">
+            Horario de recepción en CEDIS: 08:00 a 18:00 hrs
+          </span>
+        </div>
       </div>
 
-      {/* VISTA 1: ASISTENTE DE AGENDAMIENTO + PARRILLA DE ANDENES + DESGLOSE DE BULTOS */}
+      {/* Avisos de error o confirmación */}
+      {error && (
+        <div className="no-print p-4 rounded-xl bg-red-50 border border-red-300 text-red-900 text-sm font-semibold flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-xs font-bold underline ml-4">
+            Cerrar
+          </button>
+        </div>
+      )}
+      {mensaje && (
+        <div className="no-print p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-sm font-semibold flex flex-wrap items-center justify-between gap-3">
+          <span>{mensaje}</span>
+          <button
+            type="button"
+            onClick={() => setVistaActiva("BULTOS")}
+            className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg"
+          >
+            Ver seguimiento de cajas →
+          </button>
+        </div>
+      )}
+
+      {/* SECCIÓN 1: AGENDAR ENTREGA (ORGANIZADA PASO A PASO SIN AMONTONAR COMPONENTES) */}
       {vistaActiva === "AGENDAR" && (
         <form onSubmit={handleAgendar} className="space-y-6 no-print">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <span className="text-[11px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded">
-                  Paso 1 · Mis Órdenes de Compra (Filtradas por idProveedor = {proveedorActivo.idProveedor})
-                </span>
-                <h2 className="text-lg font-bold mt-1">
-                  Selección de Orden de Compra y Asignación Automática de Folio Fiscal CFDI
-                </h2>
-              </div>
-            </div>
-
-            <div className="p-6 grid md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="block text-xs font-extrabold uppercase text-slate-600">
-                  1. Mis Órdenes de Compra Emitidas por el CEDIS ({misOrdenesCompra.length})
-                </label>
-                <select
-                  value={idOc}
-                  onChange={(e) => handleCambiarOC(e.target.value)}
-                  className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-bold bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+          {/* Barra de Progreso de los 3 Pasos */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[
+              {
+                num: 1,
+                titulo: "1. Orden de Compra y Factura",
+                resumen: ocActual ? `${ocActual.idOc} · ${folioFactura}` : "Selecciona una orden",
+              },
+              {
+                num: 2,
+                titulo: "2. Fecha, Andén y Horario",
+                resumen: `Andén #${anden} · ${fecha} (${formatearHora(horaInicio)} - ${formatearHora(horaInicio + duracionHoras)})`,
+              },
+              {
+                num: 3,
+                titulo: "3. Desglose de Cajas y Confirmación",
+                resumen: `${bultosForm.length} cajas listas para etiquetar`,
+              },
+            ].map((p) => {
+              const activo = pasoWizard === p.num;
+              return (
+                <button
+                  key={p.num}
+                  type="button"
+                  onClick={() => setPasoWizard(p.num)}
+                  className={`p-3.5 rounded-xl border text-left transition flex items-center justify-between gap-3 ${
+                    activo
+                      ? "bg-amber-50/80 border-amber-400 ring-2 ring-amber-400/40"
+                      : "bg-slate-50/70 hover:bg-slate-100 border-slate-200"
+                  }`}
                 >
-                  {misOrdenesCompra.map((oc) => (
-                    <option key={oc.idOc} value={oc.idOc}>
-                      {oc.idOc} — {oc.proveedor}{" "}
-                      {oc.citaFactura
-                        ? `(Ya agendada con ${oc.citaFactura.folioFactura})`
-                        : "(Disponible para Agendar)"}
-                    </option>
-                  ))}
-                </select>
-
-                {ocYaTieneCita ? (
-                  <div className="text-xs font-bold text-amber-900 bg-amber-50 border border-amber-300 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2">
-                    <span>
-                      ⚠️ Tu orden <span className="font-mono">{idOc}</span> ya tiene registrada la factura{" "}
-                      <span className="font-mono">{ocActual.citaFactura.folioFactura}</span> en Andén #
-                      {ocActual.citaFactura.anden}. Para emitir otra OC usa el Portal de Órdenes.
-                    </span>
+                  <div>
+                    <p className={`text-xs font-extrabold ${activo ? "text-slate-900" : "text-slate-600"}`}>
+                      {p.titulo}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">{p.resumen}</p>
                   </div>
-                ) : (
-                  <p className="text-xs text-emerald-700 font-semibold">
-                    ✓ OC adjudicada a <strong>{proveedorActivo.nombre}</strong> (idProveedor #{proveedorActivo.idProveedor}) ·{" "}
-                    {ocActual?.lineas?.length || 0} partidas solicitadas.
-                  </p>
-                )}
+                  <span
+                    className={`w-6 h-6 rounded-full text-xs font-black grid place-items-center shrink-0 ${
+                      activo ? "bg-amber-500 text-slate-950" : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {p.num}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* CONTENIDO DEL PASO 1: ORDEN DE COMPRA Y FACTURA */}
+          {pasoWizard === 1 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+              <div className="border-b border-slate-100 pb-4">
+                <h2 className="text-base font-bold text-slate-900">
+                  Paso 1: Selecciona tu Orden de Compra
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Elige la Orden de Compra que vas a entregar. El sistema asignará automáticamente el folio único de tu factura.
+                </p>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-extrabold uppercase text-slate-600">
-                    2. Folio Fiscal de Factura (Autogenerado · No Editable)
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Orden de Compra a entregar
                   </label>
-                  <span className="text-[10px] font-black uppercase bg-slate-900 text-amber-400 px-2 py-0.5 rounded">
-                    🔒 Bloqueado a Teclado
-                  </span>
+                  <select
+                    value={idOc}
+                    onChange={(e) => handleCambiarOC(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-bold bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    {misOrdenesCompra.map((oc) => (
+                      <option key={oc.idOc} value={oc.idOc}>
+                        {oc.idOc} {oc.citaFactura ? `— Ya agendada (${oc.citaFactura.folioFactura})` : "— Pendiente de entrega"}
+                      </option>
+                    ))}
+                  </select>
+
+                  {ocYaTieneCita ? (
+                    <div className="text-xs font-semibold text-amber-900 bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                      Esta Orden de Compra ya tiene una cita programada en el Andén #{ocActual.citaFactura.anden} con la factura{" "}
+                      <span className="font-mono font-bold">{ocActual.citaFactura.folioFactura}</span>.
+                    </div>
+                  ) : (
+                    <p className="text-xs text-emerald-700 font-medium">
+                      ✓ Orden disponible para programar entrega ({ocActual?.lineas?.length || 0} productos solicitados).
+                    </p>
+                  )}
                 </div>
 
-                <div className="relative">
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Folio de Factura asignado
+                  </label>
                   <input
                     type="text"
                     readOnly
@@ -523,96 +569,170 @@ export default function ProveedorPage() {
                     value={folioFactura}
                     onKeyDown={(e) => e.preventDefault()}
                     onPaste={(e) => e.preventDefault()}
-                    className="w-full border-2 border-slate-300 bg-slate-100 text-slate-900 rounded-xl px-3.5 py-2.5 text-sm font-mono font-black cursor-not-allowed select-none focus:outline-none"
+                    className="w-full border border-slate-200 bg-slate-100 text-slate-900 rounded-xl px-3.5 py-2.5 text-sm font-mono font-black cursor-default select-none focus:outline-none"
                   />
+                  <p className="text-xs text-slate-500">
+                    Folio único vinculado a esta Orden de Compra.
+                  </p>
                 </div>
+              </div>
 
-                <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg font-medium">
-                  ✓ Formato fiscal real <strong>CFDI-[RFC]-[AÑO]-[CONSECUTIVO]</strong> asignado automáticamente a{" "}
-                  <strong>{proveedorActivo.nombre}</strong>.
-                </p>
+              {/* Resumen limpio de lo que pidió el CEDIS en esta OC */}
+              {ocActual?.lineas?.length > 0 && (
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-3">
+                  <h3 className="text-xs font-bold text-slate-700">
+                    Productos solicitados en la orden {ocActual.idOc}:
+                  </h3>
+                  <div className="grid md:grid-cols-3 gap-3">
+                    {ocActual.lineas.map((l) => (
+                      <div key={l.id} className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-bold text-slate-900">{l.sku}</span>
+                          <span className="text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                            Sucursal {String(l.sucursalId).padStart(2, "0")}
+                          </span>
+                        </div>
+                        <p className="text-slate-500 mt-1 line-clamp-2">{l.descripcion}</p>
+                        <p className="text-sm font-extrabold text-slate-900 mt-2">
+                          {l.piezasPedidas} piezas solicitadas
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPasoWizard(2)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition"
+                >
+                  Siguiente: Elegir Fecha y Andén →
+                </button>
               </div>
             </div>
-          </div>
+          )}
 
-          <DockCalendar
-            fecha={fecha}
-            setFecha={setFecha}
-            anden={anden}
-            setAnden={setAnden}
-            horaInicio={horaInicio}
-            setHoraInicio={setHoraInicio}
-            duracionHoras={duracionHoras}
-            setDuracionHoras={setDuracionHoras}
-            citasFacturas={data?.citasFacturas || []}
-          />
+          {/* CONTENIDO DEL PASO 2: FECHA, ANDÉN Y RELOJ DE DURACIÓN (LADO A LADO, ORDENADOS) */}
+          {pasoWizard === 2 && (
+            <div className="space-y-4">
+              <div className="grid lg:grid-cols-12 gap-6 items-stretch">
+                <div className="lg:col-span-8">
+                  <DockCalendar
+                    fecha={fecha}
+                    setFecha={setFecha}
+                    anden={anden}
+                    setAnden={setAnden}
+                    horaInicio={horaInicio}
+                    setHoraInicio={setHoraInicio}
+                    duracionHoras={duracionHoras}
+                    setDuracionHoras={setDuracionHoras}
+                    citasFacturas={data?.citasFacturas || []}
+                  />
+                </div>
+                <div className="lg:col-span-4">
+                  <DuracionClock
+                    duracionHoras={duracionHoras}
+                    setDuracionHoras={setDuracionHoras}
+                    horaInicio={horaInicio}
+                    anden={anden}
+                    fecha={fecha}
+                    citasFacturas={data?.citasFacturas || []}
+                    proveedorNombre={proveedorActivo.nombre}
+                  />
+                </div>
+              </div>
 
-          <div className="max-w-md">
-            <DuracionClock
-              duracionHoras={duracionHoras}
-              setDuracionHoras={setDuracionHoras}
-              horaInicio={horaInicio}
-              anden={anden}
-              fecha={fecha}
-              citasFacturas={data?.citasFacturas || []}
-              proveedorNombre={proveedorActivo.nombre}
-            />
-          </div>
-
-          <PackingListBuilder
-            ocActual={ocActual}
-            productosProveedor={misProductos}
-            sucursales={data?.sucursales || []}
-            bultosForm={bultosForm}
-            setBultosForm={setBultosForm}
-            folioFactura={folioFactura}
-          />
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-            <div className="text-xs text-slate-600">
-              <p className="font-bold text-slate-900 text-sm">
-                Resumen antes de confirmar: {idOc} ({proveedorActivo.nombre}) → Factura Fiscal {folioFactura}
-              </p>
-              <p>
-                Andén #{anden} · Fecha {fecha} de {formatearHora(horaInicio)} a{" "}
-                {formatearHora(horaInicio + duracionHoras)} hrs ({formatearDuracion(duracionHoras)} de descarga) ·{" "}
-                {bultosForm.length} etiquetas QR por generar.
-              </p>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setPasoWizard(1)}
+                  className="text-xs font-bold text-slate-600 hover:text-slate-900 px-4 py-2"
+                >
+                  ← Volver al Paso 1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPasoWizard(3)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition"
+                >
+                  Siguiente: Desglose de Cajas →
+                </button>
+              </div>
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={
-                enviando ||
-                !ocActual ||
-                folioDuplicado ||
-                ocYaTieneCita ||
-                Boolean(errorAgenda) ||
-                Boolean(traslapeAnden) ||
-                Boolean(traslapeProveedor) ||
-                duracionInvalida
-              }
-              className={`px-6 py-3 rounded-xl font-extrabold text-sm transition shadow-md ${
-                enviando ||
-                !ocActual ||
-                folioDuplicado ||
-                ocYaTieneCita ||
-                errorAgenda ||
-                traslapeAnden ||
-                traslapeProveedor ||
-                duracionInvalida
-                  ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                  : "bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer"
-              }`}
-            >
-              {enviando
-                ? "Registrando Cita y Generando QRs..."
-                : "Confirmar Cita en Andén y Generar Etiquetas QR →"}
-            </button>
-          </div>
+          {/* CONTENIDO DEL PASO 3: DESGLOSE DE CAJAS Y CONFIRMACIÓN FINAL */}
+          {pasoWizard === 3 && (
+            <div className="space-y-6">
+              <PackingListBuilder
+                ocActual={ocActual}
+                productosProveedor={misProductos}
+                sucursales={data?.sucursales || []}
+                bultosForm={bultosForm}
+                setBultosForm={setBultosForm}
+                folioFactura={folioFactura}
+              />
+
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                {motivoBloqueoConfirmar && (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-semibold flex flex-wrap items-center justify-between gap-2">
+                    <span>⚠️ Para activar el botón: {motivoBloqueoConfirmar}</span>
+                    {ocYaTieneCita && (
+                      <button
+                        type="button"
+                        onClick={() => setVistaActiva("ETIQUETAS")}
+                        className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-bold"
+                      >
+                        Ver sus etiquetas QR ya generadas →
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setPasoWizard(2)}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-900 px-3 py-2"
+                    >
+                      ← Cambiar Horario
+                    </button>
+                    <div className="text-xs text-slate-600 border-l border-slate-200 pl-4">
+                      <p className="font-bold text-slate-900 text-sm">
+                        Orden {idOc} · Factura {folioFactura}
+                      </p>
+                      <p>
+                        Andén #{anden} · {fecha} de {formatearHora(horaInicio)} a{" "}
+                        {formatearHora(horaInicio + duracionHoras)} hrs ({formatearDuracion(duracionHoras)} hrs) ·{" "}
+                        {bultosForm.length} cajas por etiquetar.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={enviando || Boolean(motivoBloqueoConfirmar)}
+                    className={`px-6 py-3 rounded-xl font-extrabold text-sm transition shadow-sm ${
+                      enviando || motivoBloqueoConfirmar
+                        ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                        : "bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer"
+                    }`}
+                  >
+                    {enviando
+                      ? "Confirmando cita..."
+                      : "Confirmar Cita y Generar Etiquetas QR →"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </form>
       )}
 
+      {/* SECCIÓN 2: ETIQUETAS QR */}
       {vistaActiva === "ETIQUETAS" && (
         <QrLabelsSheet
           citasFacturas={misCitasFacturas}
@@ -622,22 +742,19 @@ export default function ProveedorPage() {
         />
       )}
 
+      {/* SECCIÓN 3: MIS CITAS PROGRAMADAS */}
       {vistaActiva === "CITAS" && (
         <div className="no-print bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold">
-                Mis Citas Programadas · {proveedorActivo.nombre} (idProveedor #{proveedorActivo.idProveedor})
-              </h2>
-              <p className="text-xs text-slate-400">
-                Mostrando exclusivamente las entregas programadas por tu empresa en los 4 andenes del CEDIS.
-              </p>
-            </div>
+          <div className="p-6 border-b border-slate-200">
+            <h2 className="text-lg font-extrabold text-slate-900">Mis Citas Programadas</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Consulta tus entregas agendadas, descarga tus etiquetas QR o revisa el avance de recepción de tus cajas.
+            </p>
           </div>
 
           {misCitasFacturas.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">
-              Aún no tienes citas programadas para tus Órdenes de Compra. Ve a la pestaña 1 para agendar tu primera entrega.
+            <div className="p-10 text-center text-sm text-slate-500">
+              Aún no tienes citas programadas. Ve a &quot;Agendar Entrega&quot; para registrar tu primera cita.
             </div>
           ) : (
             <div className="p-6 grid md:grid-cols-2 gap-4">
@@ -650,28 +767,27 @@ export default function ProveedorPage() {
                 return (
                   <div
                     key={cita.folioFactura}
-                    className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-4"
+                    className="p-5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between gap-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <span className="text-[10px] font-black uppercase bg-slate-900 text-amber-400 px-2.5 py-0.5 rounded">
-                          ANDÉN #{cita.anden} · {cita.fecha} ({formatearHora(cita.horaInicio)} –{" "}
-                          {formatearHora(cita.horaInicio + cita.duracionHoras)} · {formatearDuracion(cita.duracionHoras)})
+                        <span className="text-[11px] font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-md">
+                          Andén #{cita.anden} · {cita.fecha} ({formatearHora(cita.horaInicio)} a{" "}
+                          {formatearHora(cita.horaInicio + cita.duracionHoras)} hrs)
                         </span>
-                        <h3 className="text-base font-extrabold font-mono text-slate-900 mt-1.5">
-                          Factura: {cita.folioFactura} · {cita.idOc}
+                        <h3 className="text-base font-extrabold text-slate-900 mt-2">
+                          Orden {cita.idOc} · Factura <span className="font-mono">{cita.folioFactura}</span>
                         </h3>
-                        <p className="text-xs text-slate-600 font-medium">{cita.proveedor}</p>
                       </div>
-                      <span className="text-xs font-extrabold px-2.5 py-1 rounded bg-emerald-100 text-emerald-800">
-                        {cita.bultos?.length || 0} Bultos QR
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 shrink-0">
+                        {cita.bultos?.length || 0} cajas
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200 text-xs">
-                      <span className="text-slate-600">
-                        Recibidos en Rack: <strong>{bultosRecibidos}</strong> · Pendientes en Andén:{" "}
-                        <strong>{bultosPendientes}</strong>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 text-xs">
+                      <span className="text-slate-500">
+                        Recibidas: <strong className="text-slate-800">{bultosRecibidos}</strong> · En espera:{" "}
+                        <strong className="text-slate-800">{bultosPendientes}</strong>
                       </span>
                       <div className="flex items-center gap-2">
                         <button
@@ -680,9 +796,9 @@ export default function ProveedorPage() {
                             setCitaSeleccionadaQR(cita);
                             setVistaActiva("ETIQUETAS");
                           }}
-                          className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg"
+                          className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3.5 py-1.5 rounded-lg"
                         >
-                          Ver Etiquetas QR
+                          Etiquetas QR
                         </button>
                         <button
                           type="button"
@@ -690,11 +806,10 @@ export default function ProveedorPage() {
                             setCitaSeleccionadaQR(cita);
                             setVistaActiva("BULTOS");
                           }}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg"
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3.5 py-1.5 rounded-lg"
                         >
-                          Ver estado de bultos
+                          Seguimiento
                         </button>
-
                       </div>
                     </div>
                   </div>
@@ -705,6 +820,7 @@ export default function ProveedorPage() {
         </div>
       )}
 
+      {/* SECCIÓN 4: SEGUIMIENTO DE BULTOS */}
       {vistaActiva === "BULTOS" && (
         <BultosStatusPanel
           citas={misCitasFacturas}

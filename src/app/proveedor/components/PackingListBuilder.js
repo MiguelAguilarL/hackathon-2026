@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 
-// Límites físicos por tarima según reglas del CEDIS
-const TARIMA_MAX_PESO_KG = 1000; // 1 tonelada máxima por tarima
-const TARIMA_MAX_VOLUMEN_M3 = Number((1.12 * 1.15 * 1.85).toFixed(2)); // 2.38 m3 por tarima
+const TARIMA_MAX_PESO_KG = 1000;
+const TARIMA_MAX_VOLUMEN_M3 = Number((1.12 * 1.15 * 1.85).toFixed(2));
 
-// Función auxiliar para calcular peso y volumen exactos desde el catálogo Producto
 export function calcularDimensionesBulto(sku, piezas, catalogoProductos = []) {
   const prod = catalogoProductos.find((p) => p.sku === sku);
   const cantidad = Math.max(0, Number(piezas) || 0);
@@ -41,8 +39,6 @@ export default function PackingListBuilder({
   const buscarLinea = (sku, sucursalId) =>
     lineasOC.find((l) => l.sku === sku && Number(l.sucursalId) === Number(sucursalId));
 
-  // Piezas ya declaradas para una misma partida (SKU + sucursal), excluyendo un bulto
-  // cuando se está validando su propio valor.
   const declaradasEn = (sku, sucursalId, excluirIdx = -1) =>
     bultosForm.reduce(
       (acc, b, idx) =>
@@ -57,9 +53,8 @@ export default function PackingListBuilder({
     return linea ? Math.max(0, linea.piezasPedidas - declaradasEn(sku, sucursalId, excluirIdx)) : null;
   };
 
-  const etiquetaPartida = (sku, sucursalId) => `${sku} / SUC-${String(sucursalId).padStart(2, "0")}`;
+  const etiquetaPartida = (sku, sucursalId) => `${sku} (Sucursal ${String(sucursalId).padStart(2, "0")})`;
 
-  // Importa todas las líneas de la Orden de Compra calculando peso y volumen desde la tabla Producto
   const importarLineasDeOC = () => {
     if (!ocActual?.lineas?.length) return;
     setAviso(null);
@@ -77,9 +72,7 @@ export default function PackingListBuilder({
     setBultosForm(nuevosBultos);
   };
 
-  // Divide una línea de la OC en N bultos del mismo SKU recalculando automáticamente el peso y volumen
   const dividirLineaEnBultos = (linea, numBultos) => {
-    // Nunca se pueden generar más bultos que piezas pedidas (evita piezas de 0 o fantasma).
     const n = Math.min(linea.piezasPedidas, Math.max(1, Number(numBultos) || 1));
     setAviso(null);
     const piezasBase = Math.floor(linea.piezasPedidas / n);
@@ -98,7 +91,6 @@ export default function PackingListBuilder({
       };
     });
 
-    // Reemplaza los bultos previos de esa misma línea/sucursal por los nuevos bultos divididos
     const otrosBultos = bultosForm.filter(
       (b) => !(b.sku === linea.sku && Number(b.sucursalId) === Number(linea.sucursalId))
     );
@@ -106,14 +98,12 @@ export default function PackingListBuilder({
   };
 
   const agregarBultoIndividual = () => {
-    const primeraLinea = lineasOC[0];
-    // Se agrega el bulto a la primera partida que aún tenga piezas disponibles.
     const lineaDisponible = lineasOC.find((l) => disponiblesPara(l.sku, l.sucursalId) > 0);
     if (!lineaDisponible) {
       setAviso(
         ocActual?.idOc
-          ? `Todas las partidas de la OC ${ocActual.idOc} ya están completas. No puedes declarar más piezas de las solicitadas.`
-          : "Selecciona una Orden de Compra para agregar bultos."
+          ? `Todos los productos de la orden ${ocActual.idOc} ya están empacados. Para dividir un producto en más cajas, reduce primero la cantidad en las cajas actuales.`
+          : "Selecciona una Orden de Compra para agregar cajas."
       );
       return;
     }
@@ -146,7 +136,6 @@ export default function PackingListBuilder({
     const copia = [...bultosForm];
     const actual = { ...copia[index], [campo]: valor };
 
-    // Si cambia el SKU, actualizar descripción desde catálogo Producto o línea OC
     if (campo === "sku") {
       const prodCatalogo = productosProveedor.find((p) => p.sku === valor);
       const lineaMatch = buscarLinea(valor, copia[index].sucursalId) || lineasOC.find((l) => l.sku === valor);
@@ -160,26 +149,23 @@ export default function PackingListBuilder({
       }
     }
 
-    // Regla de oro: la suma de piezas por SKU + sucursal nunca puede superar lo pedido en la OC.
     if (campo === "piezas") {
       const cantidad = Math.max(1, Math.floor(Number(valor) || 1));
       const disponibles = disponiblesPara(actual.sku, actual.sucursalId, index);
       if (disponibles === null) {
         setAviso(
-          `${etiquetaPartida(actual.sku, actual.sucursalId)} no está solicitado en la OC; este bulto será rechazado en el handheld.`
+          `${etiquetaPartida(actual.sku, actual.sucursalId)} no forma parte de esta Orden de Compra.`
         );
         actual.piezas = cantidad;
       } else if (cantidad > disponibles) {
         if (disponibles < 1) {
           setAviso(
-            `No quedan piezas disponibles para ${etiquetaPartida(actual.sku, actual.sucursalId)}. Reduce la cantidad en otros bultos de la misma partida.`
+            `Ya completaste todas las piezas solicitadas para ${etiquetaPartida(actual.sku, actual.sucursalId)}.`
           );
           return;
         }
-        const pedidas = buscarLinea(actual.sku, actual.sucursalId).piezasPedidas;
         setAviso(
-          `Máximo ${disponibles} pzas para ${etiquetaPartida(actual.sku, actual.sucursalId)} ` +
-            `(OC pide ${pedidas}, ya declaradas ${pedidas - disponibles}). Se ajustó a ${disponibles}.`
+          `La cantidad máxima restante para ${etiquetaPartida(actual.sku, actual.sucursalId)} es de ${disponibles} piezas.`
         );
         actual.piezas = disponibles;
       } else {
@@ -188,25 +174,23 @@ export default function PackingListBuilder({
       }
     }
 
-    // Mover un bulto a otra partida también debe respetar el tope de esa partida.
     if (campo === "sku" || campo === "sucursalId") {
       const disponibles = disponiblesPara(actual.sku, actual.sucursalId, index);
       if (disponibles !== null) {
         if (Number(actual.piezas) > disponibles) {
           setAviso(
-            `No puedes mover ${actual.piezas} pzas a ${etiquetaPartida(actual.sku, actual.sucursalId)}: solo quedan ${disponibles} disponibles.`
+            `Solo quedan ${disponibles} piezas por empacar para ${etiquetaPartida(actual.sku, actual.sucursalId)}.`
           );
           return;
         }
         setAviso(null);
       } else {
         setAviso(
-          `${etiquetaPartida(actual.sku, actual.sucursalId)} no está solicitado en la OC; este bulto será rechazado en el handheld.`
+          `${etiquetaPartida(actual.sku, actual.sucursalId)} no fue solicitado en esta Orden de Compra.`
         );
       }
     }
 
-    // Recalcular peso y volumen automáticamente cada vez que cambie el SKU o la cantidad de piezas
     if (campo === "sku" || campo === "piezas") {
       const dims = calcularDimensionesBulto(actual.sku, actual.piezas, productosProveedor);
       actual.pesoKg = dims.pesoKg;
@@ -225,18 +209,13 @@ export default function PackingListBuilder({
   const totalVolumenM3 = bultosForm.reduce((acc, b) => acc + Number(b.volumenM3 || 0), 0);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+      {/* Encabezado limpio */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
-          <span className="text-[11px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded">
-            Paso 3 · Desglose de Factura por Bulto (Cálculo Automático desde Tabla Producto)
-          </span>
-          <h2 className="text-lg font-bold mt-1">
-            Identificación de Bultos de Papelería · Factura{" "}
-            <span className="font-mono text-amber-400">{folioFactura || "SIN-FOLIO"}</span>
-          </h2>
-          <p className="text-xs text-slate-400">
-            El Peso (kg) y Volumen (m³) se calculan automáticamente multiplicando las piezas por el peso/volumen unitario del producto en la base de datos.
+          <h3 className="text-base font-bold text-slate-900">Desglose de Bultos / Cajas a Entregar</h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Indica cuántas cajas o tarimas vas a entregar. Recuerda no mezclar distintos productos en una misma caja.
           </p>
         </div>
 
@@ -244,307 +223,246 @@ export default function PackingListBuilder({
           <button
             type="button"
             onClick={importarLineasDeOC}
-            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-3.5 py-2 rounded-lg transition"
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition"
           >
-            Restaurar Bultos desde la OC
+            Restablecer cantidades
           </button>
           <button
             type="button"
             onClick={agregarBultoIndividual}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-3.5 py-2 rounded-lg border border-slate-700 transition"
+            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-xl transition"
           >
-            + Agregar Bulto / Caja
+            + Agregar otra caja
           </button>
         </div>
       </div>
 
-      <div className="p-6 space-y-6">
-        {aviso && (
-          <div role="alert" className="bg-red-50 border border-red-300 text-red-900 text-xs font-bold px-3.5 py-2.5 rounded-xl">
-            ⚠️ {aviso}
-          </div>
-        )}
+      {aviso && (
+        <div role="alert" className="bg-amber-50 border border-amber-300 text-amber-950 text-xs font-semibold px-4 py-3 rounded-xl">
+          {aviso}
+        </div>
+      )}
 
-        {/* Espejo de la Orden de Compra */}
-        {ocActual?.lineas?.length > 0 && (
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-xs font-extrabold uppercase text-slate-700">
-                  Conciliación contra Orden de Compra {ocActual.idOc} ({ocActual.proveedor})
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Puedes dividir cualquier partida en varias tarimas/bultos si una sola supera los 1,000 kg o 2.38 m³.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-600 font-medium">Dividir partida en:</span>
-                <select
-                  value={cajasPorLinea}
-                  onChange={(e) => setCajasPorLinea(Number(e.target.value))}
-                  className="border border-slate-300 rounded px-2 py-1 text-xs font-bold bg-white"
-                >
-                  {[2, 3, 4, 5].map((n) => (
-                    <option key={n} value={n}>
-                      {n} bultos
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-3">
-              {ocActual.lineas.map((linea) => {
-                const piezasDeclaradas = bultosForm
-                  .filter((b) => b.sku === linea.sku && Number(b.sucursalId) === Number(linea.sucursalId))
-                  .reduce((acc, b) => acc + Number(b.piezas || 0), 0);
-
-                const dimsUnit = calcularDimensionesBulto(linea.sku, 1, productosProveedor);
-                const excedido = piezasDeclaradas > linea.piezasPedidas;
-                const completo = piezasDeclaradas === linea.piezasPedidas;
-
-                return (
-                  <div
-                    key={linea.id}
-                    className={`p-3 rounded-lg border text-xs flex flex-col justify-between ${
-                      excedido
-                        ? "bg-red-50 border-red-300 text-red-900"
-                        : completo
-                        ? "bg-emerald-50 border-emerald-300 text-emerald-950"
-                        : "bg-white border-slate-200 text-slate-800"
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono font-extrabold">{linea.sku}</span>
-                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-900 text-white">
-                          SUC-{String(linea.sucursalId).padStart(2, "0")}
-                        </span>
-                      </div>
-                      <p className="text-[11px] opacity-80 mt-0.5">{linea.descripcion}</p>
-                      <p className="text-[10px] font-mono font-bold text-slate-600 mt-1">
-                        Catálogo: {dimsUnit.pesoUnitarioKg} kg/pza · {dimsUnit.volumenUnitarioM3} m³/pza
-                      </p>
-                    </div>
-
-                    <div className="mt-3 pt-2 border-t border-slate-200/70 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold block opacity-75">Empacado vs Pedido</span>
-                        <span className="font-extrabold text-sm">
-                          {piezasDeclaradas} / {linea.piezasPedidas} pzas
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => dividirLineaEnBultos(linea, cajasPorLinea)}
-                        className="text-[11px] font-bold bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded transition"
-                      >
-                        Dividir en {cajasPorLinea} bultos
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Lista de Bultos con Peso y Volumen Autocalculados (Solo Lectura) */}
-        <div className="space-y-3">
-          {bultosForm.map((bulto, idx) => {
-            const idBultoPreview = `BUL-${folioFactura || "FAC"}-${String(idx + 1).padStart(2, "0")}`;
-            const dims = calcularDimensionesBulto(bulto.sku, bulto.piezas, productosProveedor);
-            const excedePesoTarima = dims.pesoKg > TARIMA_MAX_PESO_KG;
-            const excedeVolumenTarima = dims.volumenM3 > TARIMA_MAX_VOLUMEN_M3;
-
-            const skuEnOC = ocActual?.lineas?.some(
-              (l) => l.sku === bulto.sku && Number(l.sucursalId) === Number(bulto.sucursalId)
-            );
-            const disponiblesBulto = disponiblesPara(bulto.sku, bulto.sucursalId, idx);
-            const sinDisponibilidad = disponiblesBulto !== null && disponiblesBulto < 1;
-
-            return (
-              <div
-                key={idx}
-                className={`p-4 rounded-xl border transition ${
-                  excedePesoTarima || excedeVolumenTarima
-                    ? "bg-amber-50/70 border-amber-400"
-                    : "bg-slate-50 border-slate-200"
-                }`}
+      {/* Resumen de productos solicitados en la OC (para dividir fácilmente en cajas) */}
+      {ocActual?.lineas?.length > 0 && (
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-bold text-slate-700">
+              Productos solicitados en tu Orden de Compra ({ocActual.idOc})
+            </span>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500">Repartir producto en:</span>
+              <select
+                value={cajasPorLinea}
+                onChange={(e) => setCajasPorLinea(Number(e.target.value))}
+                className="border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold bg-white"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-200">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="bg-slate-900 text-amber-400 font-mono font-extrabold text-xs px-2.5 py-1 rounded">
-                      Bulto #{idx + 1}: {idBultoPreview}
-                    </span>
-                    <span className="text-xs font-mono text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded">
-                      Fórmula: {bulto.piezas} pzas × ({dims.pesoUnitarioKg} kg | {dims.volumenUnitarioM3} m³)
-                    </span>
-                    {!skuEnOC && (
-                      <span className="text-[10px] font-bold bg-red-100 text-red-800 px-2 py-0.5 rounded">
-                        Aviso: SKU/Sucursal no solicitado en esta OC (Será rechazado en Handheld)
+                {[2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>
+                    {n} cajas iguales
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-3">
+            {ocActual.lineas.map((linea) => {
+              const piezasDeclaradas = bultosForm
+                .filter((b) => b.sku === linea.sku && Number(b.sucursalId) === Number(linea.sucursalId))
+                .reduce((acc, b) => acc + Number(b.piezas || 0), 0);
+
+              const excedido = piezasDeclaradas > linea.piezasPedidas;
+              const completo = piezasDeclaradas === linea.piezasPedidas;
+
+              return (
+                <div
+                  key={linea.id}
+                  className={`p-3.5 rounded-xl border text-xs flex flex-col justify-between ${
+                    excedido
+                      ? "bg-red-50 border-red-200 text-red-900"
+                      : completo
+                      ? "bg-white border-emerald-300 text-slate-900"
+                      : "bg-white border-slate-200 text-slate-800"
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono font-bold text-slate-900">{linea.sku}</span>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                        Sucursal {String(linea.sucursalId).padStart(2, "0")}
                       </span>
-                    )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 line-clamp-1">{linea.descripcion}</p>
                   </div>
 
-                  {bultosForm.length > 1 && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-xs font-bold">
+                      {piezasDeclaradas} / {linea.piezasPedidas} pzas
+                    </span>
                     <button
                       type="button"
-                      onClick={() => eliminarBulto(idx)}
-                      className="text-xs font-bold text-red-600 hover:text-red-800 px-2 py-1"
+                      onClick={() => dividirLineaEnBultos(linea, cajasPorLinea)}
+                      className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg transition"
                     >
-                      Eliminar Bulto ✕
+                      Dividir en {cajasPorLinea} cajas
                     </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                      Sucursal Destino (Rack)
-                    </label>
-                    <select
-                      value={bulto.sucursalId}
-                      onChange={(e) => actualizarBulto(idx, "sucursalId", Number(e.target.value))}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold"
-                    >
-                      {sucursales.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.codigo} → {s.rackAsignado}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                      Producto del Catálogo (SKU)
-                    </label>
-                    <select
-                      value={bulto.sku}
-                      onChange={(e) => actualizarBulto(idx, "sku", e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-mono font-bold"
-                    >
-                      {productosProveedor.map((p) => (
-                        <option key={p.sku} value={p.sku}>
-                          {p.sku}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                      Descripción Oficial (Tabla Producto)
-                    </label>
-                    <input
-                      type="text"
-                      readOnly
-                      tabIndex={-1}
-                      value={bulto.descripcion}
-                      className="w-full bg-slate-200/70 border border-slate-300 rounded-lg px-2.5 py-2 text-xs text-slate-700 cursor-not-allowed select-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                      Cantidad de Piezas
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={disponiblesBulto !== null ? Math.max(1, disponiblesBulto) : undefined}
-                      required
-                      value={bulto.piezas}
-                      onChange={(e) => actualizarBulto(idx, "piezas", Number(e.target.value))}
-                      aria-label={`Piezas del bulto ${idx + 1} de ${etiquetaPartida(bulto.sku, bulto.sucursalId)}`}
-                      className={`w-full bg-white border-2 rounded-lg px-2.5 py-2 text-xs font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                        sinDisponibilidad ? "border-red-500 text-red-800" : "border-amber-400"
-                      }`}
-                    />
-                    {disponiblesBulto !== null && (
-                      <p className={`text-[9px] font-bold mt-1 ${sinDisponibilidad ? "text-red-700" : "text-slate-500"}`}>
-                        Tope OC: {disponiblesBulto} pzas disponibles
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                        🔒 Peso Auto (kg)
-                      </label>
-                      <input
-                        type="text"
-                        readOnly
-                        tabIndex={-1}
-                        value={`${dims.pesoKg} kg`}
-                        className={`w-full bg-slate-200/80 border rounded-lg px-2 py-2 text-xs font-mono font-black cursor-not-allowed select-none ${
-                          excedePesoTarima ? "border-red-500 text-red-700" : "border-slate-300 text-slate-900"
-                        }`}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-                        🔒 Vol Auto (m³)
-                      </label>
-                      <input
-                        type="text"
-                        readOnly
-                        tabIndex={-1}
-                        value={`${dims.volumenM3} m³`}
-                        className={`w-full bg-slate-200/80 border rounded-lg px-2 py-2 text-xs font-mono font-black cursor-not-allowed select-none ${
-                          excedeVolumenTarima ? "border-red-500 text-red-700" : "border-slate-300 text-slate-900"
-                        }`}
-                      />
-                    </div>
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-                {(excedePesoTarima || excedeVolumenTarima) && (
-                  <p className="text-[11px] font-bold text-amber-900 mt-2">
-                    ⚠️ Límite físico de Tarima: Una tarima estándar (1.12 × 1.15 × 1.85 m) soporta máximo{" "}
-                    {TARIMA_MAX_PESO_KG} kg y {TARIMA_MAX_VOLUMEN_M3} m³. Usa el botón &quot;Dividir en bultos&quot; arriba para repartir estas piezas en varias tarimas.
-                  </p>
+      {/* Lista limpia de Cajas / Bultos */}
+      <div className="space-y-3">
+        {bultosForm.map((bulto, idx) => {
+          const dims = calcularDimensionesBulto(bulto.sku, bulto.piezas, productosProveedor);
+          const excedePesoTarima = dims.pesoKg > TARIMA_MAX_PESO_KG;
+          const excedeVolumenTarima = dims.volumenM3 > TARIMA_MAX_VOLUMEN_M3;
+          const disponiblesBulto = disponiblesPara(bulto.sku, bulto.sucursalId, idx);
+
+          return (
+            <div
+              key={idx}
+              className={`p-4 rounded-xl border transition ${
+                excedePesoTarima || excedeVolumenTarima
+                  ? "bg-amber-50/40 border-amber-300"
+                  : "bg-white border-slate-200"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="bg-slate-900 text-white font-bold text-xs px-2.5 py-1 rounded-lg">
+                    Caja #{idx + 1}
+                  </span>
+                  <span className="text-xs text-slate-500 font-medium truncate max-w-md">
+                    {bulto.descripcion}
+                  </span>
+                </div>
+
+                {bultosForm.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => eliminarBulto(idx)}
+                    className="text-xs font-semibold text-slate-400 hover:text-red-600 px-2 py-1 transition"
+                  >
+                    Quitar caja
+                  </button>
                 )}
               </div>
-            );
-          })}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    Sucursal destino
+                  </label>
+                  <select
+                    value={bulto.sucursalId}
+                    onChange={(e) => actualizarBulto(idx, "sucursalId", Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900"
+                  >
+                    {sucursales.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    Producto a empacar
+                  </label>
+                  <select
+                    value={bulto.sku}
+                    onChange={(e) => actualizarBulto(idx, "sku", e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900"
+                  >
+                    {productosProveedor.map((p) => (
+                      <option key={p.sku} value={p.sku}>
+                        {p.sku} — {p.descripcion}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    Piezas en esta caja
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={disponiblesBulto !== null ? Math.max(1, disponiblesBulto) : undefined}
+                    required
+                    value={bulto.piezas}
+                    onChange={(e) => actualizarBulto(idx, "piezas", Number(e.target.value))}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Peso
+                    </label>
+                    <div className="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-mono font-bold text-slate-700">
+                      {dims.pesoKg} kg
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Volumen
+                    </label>
+                    <div className="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-mono font-bold text-slate-700">
+                      {dims.volumenM3} m³
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {(excedePesoTarima || excedeVolumenTarima) && (
+                <p className="text-xs font-medium text-amber-800 mt-2.5">
+                  Nota: Esta caja supera la capacidad de una tarima individual ({TARIMA_MAX_PESO_KG} kg / {TARIMA_MAX_VOLUMEN_M3} m³). Te sugerimos dividirla en 2 o más cajas con el botón superior.
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Totales de la entrega */}
+      <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-6 text-xs">
+          <div>
+            <span className="text-slate-500 block">Total de cajas</span>
+            <span className="text-base font-extrabold text-slate-900">{bultosForm.length}</span>
+          </div>
+          <div>
+            <span className="text-slate-500 block">Total de piezas</span>
+            <span className="text-base font-extrabold text-slate-900">{totalPiezas.toLocaleString()} pzas</span>
+          </div>
+          <div>
+            <span className="text-slate-500 block">Peso total</span>
+            <span className="text-base font-extrabold text-slate-900">{totalPesoKg.toFixed(2)} kg</span>
+          </div>
+          <div>
+            <span className="text-slate-500 block">Volumen total</span>
+            <span className="text-base font-extrabold text-slate-900">{totalVolumenM3.toFixed(3)} m³</span>
+          </div>
         </div>
 
-        {/* Barra de Resumen Total de la Factura */}
-        <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-6 text-xs">
-            <div>
-              <span className="text-slate-400 block uppercase font-bold text-[10px]">Total Bultos / Etiquetas QR</span>
-              <span className="text-lg font-extrabold text-amber-400">{bultosForm.length} bultos</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block uppercase font-bold text-[10px]">Total Piezas Declaradas</span>
-              <span className="text-lg font-extrabold">{totalPiezas.toLocaleString()} pzas</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block uppercase font-bold text-[10px]">Peso Total Calculado</span>
-              <span className="text-lg font-extrabold text-emerald-400">{totalPesoKg.toFixed(2)} kg</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block uppercase font-bold text-[10px]">Volumen Total Calculado</span>
-              <span className="text-lg font-extrabold text-emerald-400">{totalVolumenM3.toFixed(3)} m³</span>
-            </div>
-          </div>
-
-          <div className="text-right text-xs text-slate-300 flex flex-wrap justify-end gap-2">
-            {hayExcedente ? (
-              <span className="inline-block bg-red-500/20 border border-red-500/40 text-red-300 px-3 py-1 rounded-full font-bold">
-                ✕ Excedente vs OC · ajusta las piezas antes de agendar
-              </span>
-            ) : (
-              <span className="inline-block bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded-full font-bold">
-                ✓ Piezas dentro de lo solicitado en la OC
-              </span>
-            )}
-          </div>
-        </div>
+        <span
+          className={`text-xs font-bold px-3 py-1.5 rounded-full ${
+            hayExcedente
+              ? "bg-red-100 text-red-800"
+              : "bg-emerald-100 text-emerald-800"
+          }`}
+        >
+          {hayExcedente ? "Revisa las cantidades declaradas" : "✓ Cantidades listas para confirmar"}
+        </span>
       </div>
     </div>
   );
