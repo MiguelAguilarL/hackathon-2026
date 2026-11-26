@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import DockCalendar from "./components/DockCalendar";
 import PackingListBuilder, { calcularDimensionesBulto } from "./components/PackingListBuilder";
 import QrLabelsSheet from "./components/QrLabelsSheet";
-import ProveedorLogin from "./components/ProveedorLogin";
 import DuracionClock from "./components/DuracionClock";
 import BultosStatusPanel from "./components/BultosStatusPanel";
 import {
@@ -62,6 +61,7 @@ function generarFolioFacturaRealUnico(oc, citasFacturas = []) {
 }
 
 export default function ProveedorPage() {
+  const router = useRouter();
   const [proveedorActivo, setProveedorActivo] = useState(null);
   const [verificandoSesion, setVerificandoSesion] = useState(true);
 
@@ -140,13 +140,13 @@ export default function ProveedorPage() {
   const verificarSesionInicial = async () => {
     setVerificandoSesion(true);
     try {
-      const res = await fetch("/proveedor/api/auth");
+      const res = await fetch("/api/auth");
       const json = await res.json();
-      if (json.autenticado && json.proveedor) {
-        setProveedorActivo(json.proveedor);
-        await cargarDatos(json.proveedor);
+      if (json.autenticado && json.perfil === "proveedor") {
+        setProveedorActivo(json.usuario);
+        await cargarDatos(json.usuario);
       } else {
-        setProveedorActivo(null);
+        router.replace("/");
       }
     } finally {
       setVerificandoSesion(false);
@@ -157,20 +157,13 @@ export default function ProveedorPage() {
     verificarSesionInicial();
   }, []);
 
-  const handleLoginExitoso = async (prov) => {
-    setProveedorActivo(prov);
-    setMensaje(null);
-    setError(null);
-    setVistaActiva("AGENDAR");
-    await cargarDatos(prov);
-  };
-
   const handleCerrarSesion = async () => {
-    await fetch("/proveedor/api/auth", { method: "DELETE" });
+    await fetch("/api/auth", { method: "DELETE" });
     setProveedorActivo(null);
     setCitaSeleccionadaQR(null);
     setMensaje(null);
     setError(null);
+    router.replace("/");
   };
 
   if (verificandoSesion) {
@@ -182,7 +175,11 @@ export default function ProveedorPage() {
   }
 
   if (!proveedorActivo) {
-    return <ProveedorLogin onLoginExitoso={handleLoginExitoso} />;
+    return (
+      <div className="p-8 text-center text-sm text-slate-500 font-medium">
+        Redirigiendo al inicio de sesión...
+      </div>
+    );
   }
 
   // Filtrar estrictamente las Órdenes de Compra, Productos y Citas de este proveedor (idProveedor)
@@ -356,7 +353,7 @@ export default function ProveedorPage() {
           onClick={handleCerrarSesion}
           className="bg-slate-800 hover:bg-red-600 text-slate-200 hover:text-white border border-slate-700 font-extrabold text-xs px-4 py-2 rounded-xl transition"
         >
-          Cerrar Sesión / Cambiar Proveedor
+          Cerrar sesión
         </button>
       </div>
 

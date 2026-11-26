@@ -16,26 +16,7 @@ export default function RootLayout({ children }) {
               <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded font-black">CEDIS</span>
               <span>Catlovers WMS</span>
             </Link>
-            <nav className="flex flex-wrap items-center gap-2 text-sm">
-              <Link
-                href="/proveedor"
-                className="px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 transition"
-              >
-                1-2. Portal Proveedor (Citas + QR)
-              </Link>
-              <Link
-                href="/ordenes"
-                className="px-3 py-1.5 rounded-md bg-emerald-700 hover:bg-emerald-600 transition font-medium"
-              >
-                3. Órdenes (Simulador OC)
-              </Link>
-              <Link
-                href="/embarques"
-                className="px-3 py-1.5 rounded-md bg-blue-700 hover:bg-blue-600 transition font-medium"
-              >
-                4. Racks y Embarques
-              </Link>
-            </nav>
+
           </div>
         </header>
         <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>

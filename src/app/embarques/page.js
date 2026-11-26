@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   resumenRack,
   resumenTorton,
@@ -18,6 +19,7 @@ import TortonPanel from "./components/TortonPanel";
 import RelacionEmbarque from "./components/RelacionEmbarque";
 
 export default function EmbarquesPage() {
+  const router = useRouter();
   const {
     data,
     loading,
@@ -38,6 +40,39 @@ export default function EmbarquesPage() {
   const [rackSeleccionadoNum, setRackSeleccionadoNum] = useState(null);
   const [tortonSucursalId, setTortonSucursalId] = useState(null);
   const [andenPorSucursal, setAndenPorSucursal] = useState({});
+  const [usuarioBodega, setUsuarioBodega] = useState(null);
+  const [verificandoSesion, setVerificandoSesion] = useState(true);
+
+  useEffect(() => {
+    let activo = true;
+
+    const verificarSesion = async () => {
+      try {
+        const res = await fetch("/api/auth");
+        const json = await res.json();
+        if (!activo) return;
+        if (!json.autenticado || json.perfil !== "bodega") {
+          router.replace("/");
+          return;
+        }
+        setUsuarioBodega(json.usuario);
+      } catch {
+        if (activo) router.replace("/");
+      } finally {
+        if (activo) setVerificandoSesion(false);
+      }
+    };
+
+    verificarSesion();
+    return () => {
+      activo = false;
+    };
+  }, [router]);
+
+  const handleCerrarSesion = async () => {
+    await fetch("/api/auth", { method: "DELETE" });
+    router.replace("/");
+  };
 
   useEffect(() => {
     if (!data?.sucursales || rackSeleccionadoNum != null) return;
@@ -93,6 +128,14 @@ export default function EmbarquesPage() {
     if (tab !== "salida" || tortonSucursalId != null) return;
     if (tortones.length >= 1) setTortonSucursalId(tortones[0].id);
   }, [tab, tortones, tortonSucursalId]);
+
+  if (verificandoSesion) {
+    return (
+      <div className="p-8 text-center text-sm text-slate-500 font-medium">
+        Verificando sesión de Personal de Bodega...
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -167,6 +210,29 @@ export default function EmbarquesPage() {
 
   return (
     <div className="space-y-8">
+      {/* Barra Superior de Sesión del Personal de Bodega Autenticado */}
+      <div className="no-print bg-slate-900 text-white rounded-2xl px-6 py-3.5 border border-slate-800 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="bg-blue-500 text-white font-black text-xs px-2.5 py-1 rounded">
+            SESIÓN ACTIVA · Personal de Bodega
+          </span>
+          <div>
+            <p className="text-sm font-extrabold text-white">{usuarioBodega?.nombre}</p>
+            <p className="text-xs text-slate-400 font-mono">
+              {usuarioBodega?.correo} · {usuarioBodega?.area} · {usuarioBodega?.puesto}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleCerrarSesion}
+          className="bg-slate-800 hover:bg-red-600 text-slate-200 hover:text-white border border-slate-700 font-extrabold text-xs px-4 py-2 rounded-xl transition"
+        >
+          Cerrar sesión
+        </button>
+      </div>
+
       <div className="no-print bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
         <EmbarquesHeader tab={tab} onTabChange={setTab} />
 

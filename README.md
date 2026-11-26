@@ -64,12 +64,13 @@ corepack pnpm dev        # abre http://localhost:3000
 
 No uses `npm install` ni `npm run dev`: el proyecto usa **`pnpm` de forma obligatoria** (ver `AGENTS.md`). `prisma/dev.db`, `.next/` y `node_modules/` están en `.gitignore`, así que cada persona genera su propia base de datos con `db:setup`. El archivo `.env` sí se versiona y solo contiene `DATABASE_URL="file:./dev.db"`.
 
-### Rutas
+### Acceso y rutas
 
-- `/` — panel general.
-- `/proveedor` — portal del proveedor: agendamiento, etiquetas QR y estado actual de bultos. La emisión de OC con catálogo se realiza en `/ordenes`. Credenciales de ejemplo en `prisma/seed.mjs` (p. ej. `ventas@papeleranacional.mx` / `Papel2026*`).
-- `/ordenes` — portal interno de Órdenes (personal de Catlovers) con login corporativo propio y simulador de OC sobre el catálogo del proveedor elegido. Cuentas demo: `compras@catlovers.mx` / `Compras2026*`, `cedis@catlovers.mx` / `Cedis2026*` y `almacen@catlovers.mx` / `Almacen2026*`.
-- `/embarques` — acomodo en racks y control de embarques.
+El acceso es **único** y está en `/`: selecciona tu perfil y, al iniciar sesión, serás redirigido solo a tu módulo. El middleware bloquea el resto de rutas (redirige a `/`).
+
+- **Proveedor** → `/proveedor`: agendamiento, facturación CFDI, etiquetas QR y estado de bultos. Cuentas demo en `prisma/seed.mjs` (p. ej. `ventas@papeleranacional.mx` / `Papel2026*`).
+- **Personal de Órdenes de Compra** → `/ordenes`: simulador de OC con catálogo. Cuentas demo: `compras@catlovers.mx` / `Compras2026*`, `cedis@catlovers.mx` / `Cedis2026*` y `almacen@catlovers.mx` / `Almacen2026*`.
+- **Personal de Bodega** → `/embarques`: acomodo en racks y control de embarques. Cuentas demo: `bodega@catlovers.mx` / `Bodega2026*`, `rack@catlovers.mx` / `Rack2026*` y `embarques@catlovers.mx` / `Embarques2026*`.
 - `/api/cedis` — API JSON del CEDIS.
 
 ### Solución de problemas

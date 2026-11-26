@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import OcErpSimulator from "../proveedor/components/OcErpSimulator";
-import OrdenesLogin from "./components/OrdenesLogin";
 
 export default function OrdenesPage() {
+  const router = useRouter();
   const [verificandoSesion, setVerificandoSesion] = useState(true);
   const [empleadoActivo, setEmpleadoActivo] = useState(null);
   const [proveedores, setProveedores] = useState([]);
@@ -32,33 +32,31 @@ export default function OrdenesPage() {
     }
   };
 
-  const aplicarSesion = async (json) => {
-    setEmpleadoActivo(json.empleado);
-    const lista = json.proveedoresPublicos || [];
-    setProveedores(lista);
-
-    if (lista.length > 0) {
-      setIdProveedorSeleccionado((prev) => {
-        const sigueDisponible = lista.some(
-          (p) => Number(p.idProveedor) === Number(prev)
-        );
-        return sigueDisponible ? prev : lista[0].idProveedor;
-      });
-    }
-
-    await cargarDatos();
-  };
-
   const verificarSesionInicial = async () => {
     setVerificandoSesion(true);
     try {
-      const res = await fetch("/ordenes/api/auth");
+      const res = await fetch("/api/auth");
       const json = await res.json();
-      if (json.autenticado && json.empleado) {
-        await aplicarSesion(json);
-      } else {
-        setProveedores(json.proveedoresPublicos || []);
+
+      if (!json.autenticado || json.perfil !== "ordenes") {
+        router.replace("/");
+        return;
       }
+
+      setEmpleadoActivo(json.usuario);
+      const lista = json.proveedoresPublicos || [];
+      setProveedores(lista);
+
+      if (lista.length > 0) {
+        setIdProveedorSeleccionado((prev) => {
+          const sigueDisponible = lista.some(
+            (p) => Number(p.idProveedor) === Number(prev)
+          );
+          return sigueDisponible ? prev : lista[0].idProveedor;
+        });
+      }
+
+      await cargarDatos();
     } catch {
       setError("No fue posible verificar la sesión del Portal de Órdenes.");
     } finally {
@@ -70,20 +68,9 @@ export default function OrdenesPage() {
     verificarSesionInicial();
   }, []);
 
-  const handleLoginExitoso = async () => {
-    setMensaje(null);
-    setError(null);
-    await verificarSesionInicial();
-  };
-
   const handleCerrarSesion = async () => {
-    await fetch("/ordenes/api/auth", { method: "DELETE" });
-    setEmpleadoActivo(null);
-    setProveedores([]);
-    setIdProveedorSeleccionado(null);
-    setData(null);
-    setMensaje(null);
-    setError(null);
+    await fetch("/api/auth", { method: "DELETE" });
+    router.replace("/");
   };
 
   const proveedorActivo = useMemo(
@@ -126,7 +113,11 @@ export default function OrdenesPage() {
   }
 
   if (!empleadoActivo) {
-    return <OrdenesLogin onLoginExitoso={handleLoginExitoso} />;
+    return (
+      <div className="p-8 text-center text-sm text-slate-500 font-medium">
+        Redirigiendo al inicio de sesión...
+      </div>
+    );
   }
 
   return (
@@ -154,12 +145,6 @@ export default function OrdenesPage() {
           <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-3 py-2 rounded-lg">
             Proveedor actual: #{proveedorActivo?.idProveedor}
           </span>
-          <Link
-            href="/"
-            className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold px-3.5 py-2 rounded-lg"
-          >
-            Ir al CEDIS →
-          </Link>
           <button
             type="button"
             onClick={handleCerrarSesion}
