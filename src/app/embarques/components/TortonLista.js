@@ -71,9 +71,6 @@ export default function TortonLista({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-xs font-mono font-bold text-amber-700">
-                            {suc.rackAsignado}
-                          </p>
                           <p className="text-sm font-bold text-slate-900 leading-snug">
                             {suc.nombre}
                           </p>

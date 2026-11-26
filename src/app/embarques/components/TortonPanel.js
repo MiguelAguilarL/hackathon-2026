@@ -44,9 +44,7 @@ export default function TortonPanel({
       <div className="bg-slate-900 text-white p-5 rounded-xl space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-mono uppercase text-amber-400">
-              Tortón · {sucursal.rackAsignado}
-            </p>
+            <p className="text-xs font-mono uppercase text-amber-400">Tortón</p>
             <h2 className="text-lg font-extrabold mt-0.5">{sucursal.nombre}</h2>
             <p
               className={`text-sm mt-1 font-semibold ${
