@@ -5,7 +5,6 @@ import Link from "next/link";
 import DockCalendar from "./components/DockCalendar";
 import PackingListBuilder, { calcularDimensionesBulto } from "./components/PackingListBuilder";
 import QrLabelsSheet from "./components/QrLabelsSheet";
-import OcErpSimulator from "./components/OcErpSimulator";
 import ProveedorLogin from "./components/ProveedorLogin";
 import DuracionClock from "./components/DuracionClock";
 import BultosStatusPanel from "./components/BultosStatusPanel";
@@ -67,7 +66,7 @@ export default function ProveedorPage() {
   const [verificandoSesion, setVerificandoSesion] = useState(true);
 
   const [data, setData] = useState(null);
-  const [vistaActiva, setVistaActiva] = useState("AGENDAR"); // "AGENDAR" | "SIMULADOR_OC" | "ETIQUETAS" | "CITAS" | "BULTOS"
+  const [vistaActiva, setVistaActiva] = useState("AGENDAR"); // "AGENDAR" | "ETIQUETAS" | "CITAS" | "BULTOS"
 
   const [idOc, setIdOc] = useState("");
   const [folioFactura, setFolioFactura] = useState("");
@@ -205,18 +204,6 @@ export default function ProveedorPage() {
     }
   };
 
-  const handleOcNuevaCreada = async (nuevaOc) => {
-    const json = await cargarDatos(proveedorActivo, nuevaOc.idOc);
-    sincronizarConOc(nuevaOc, json?.citasFacturas || [], json?.productos || []);
-    setMensaje(
-      `Orden de Compra ${nuevaOc.idOc} emitida para tu cuenta (idProveedor #${proveedorActivo.idProveedor}). Folio Fiscal asignado: ${generarFolioFacturaRealUnico(
-        nuevaOc,
-        json?.citasFacturas || []
-      )}.`
-    );
-    setVistaActiva("AGENDAR");
-  };
-
   const folioDuplicado = data?.citasFacturas?.some(
     (c) => c.folioFactura.trim().toUpperCase() === folioFactura.trim().toUpperCase()
   );
@@ -274,7 +261,7 @@ export default function ProveedorPage() {
 
     if (ocYaTieneCita) {
       setError(
-        `La Orden de Compra ${idOc} ya tiene una factura asociada (${ocActual.citaFactura.folioFactura}). Selecciona otra OC o emite una nueva en el Simulador ERP.`
+        `La Orden de Compra ${idOc} ya tiene una factura asociada (${ocActual.citaFactura.folioFactura}). Selecciona otra OC o emite una nueva desde el Portal de Órdenes.`
       );
       return;
     }
@@ -374,24 +361,23 @@ export default function ProveedorPage() {
       </div>
 
       {/* Encabezado Industrial del Portal de Proveedores de Papelería */}
-      <div className="no-print bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded">
-                CEDIS Papelería · Momentos 1 y 2
-              </span>
-              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded">
-                4 Andenes de Recibo · Horario 08:00 a 18:00 hrs · Descarga de 1:00 a 2:00 hrs
-              </span>
-            </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 mt-2">
-              Portal de Proveedores: Citas, Facturación CFDI y Cubicación Automática
-            </h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Visualiza únicamente las Órdenes de Compra de <strong>{proveedorActivo.nombre}</strong>, con cálculo automático de peso y volumen desde tu catálogo de productos de papelería.
-            </p>
-          </div>
+      <div className="no-print bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded shrink-0">
+            CEDIS Papelería · Momentos 1 y 2
+          </span>
+          <h1 className="text-lg md:text-xl lg:text-2xl font-extrabold text-slate-900 lg:whitespace-nowrap">
+            Portal de Proveedores: Citas, Facturación CFDI y Cubicación Automática
+          </h1>
+          <span className="hidden xl:inline text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded">
+            4 Andenes de Recibo · Horario 08:00 a 18:00 hrs · Descarga de 1:00 a 2:00 hrs
+          </span>
+        </div>
+
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <p className="text-sm text-slate-600">
+            Visualiza únicamente las Órdenes de Compra de <strong>{proveedorActivo.nombre}</strong>, con cálculo automático de peso y volumen desde tu catálogo de productos de papelería.
+          </p>
 
           <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200 shrink-0">
             <button
@@ -404,17 +390,6 @@ export default function ProveedorPage() {
               }`}
             >
               1. Agendar Cita y Factura ({misOcsDisponiblesCount} libres)
-            </button>
-            <button
-              type="button"
-              onClick={() => setVistaActiva("SIMULADOR_OC")}
-              className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 ${
-                vistaActiva === "SIMULADOR_OC"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-blue-700 hover:bg-blue-50"
-              }`}
-            >
-              <span>+ Simulador ERP: Emitir OC</span>
             </button>
             <button
               type="button"
@@ -470,27 +445,17 @@ export default function ProveedorPage() {
           <div className="mt-4 p-4 rounded-xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 text-sm font-bold flex flex-wrap items-center justify-between gap-3">
             <span>✅ {mensaje}</span>
             <div className="flex items-center gap-2">
-              <Link
-                href="/handheld"
+              <button
+                type="button"
+                onClick={() => setVistaActiva("BULTOS")}
                 className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-extrabold px-3.5 py-1.5 rounded-lg"
               >
-                Ir a Escanear en /handheld →
-              </Link>
+                Ver estado de bultos →
+              </button>
             </div>
           </div>
         )}
       </div>
-
-      {/* VISTA SIMULADOR ERP: EMISIÓN DE NUEVAS ÓRDENES DE COMPRA USANDO LA TABLA PRODUCTO */}
-      {vistaActiva === "SIMULADOR_OC" && (
-        <OcErpSimulator
-          proveedorActivo={proveedorActivo}
-          productosProveedor={misProductos}
-          ordenesCompra={data?.ordenesCompra || []}
-          sucursales={data?.sucursales || []}
-          onOcCreada={handleOcNuevaCreada}
-        />
-      )}
 
       {/* VISTA 1: ASISTENTE DE AGENDAMIENTO + PARRILLA DE ANDENES + DESGLOSE DE BULTOS */}
       {vistaActiva === "AGENDAR" && (
@@ -505,13 +470,6 @@ export default function ProveedorPage() {
                   Selección de Orden de Compra y Asignación Automática de Folio Fiscal CFDI
                 </h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setVistaActiva("SIMULADOR_OC")}
-                className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold px-3.5 py-2 rounded-lg transition shadow"
-              >
-                + Simular Nueva OC con mi Catálogo
-              </button>
             </div>
 
             <div className="p-6 grid md:grid-cols-2 gap-6">
@@ -539,15 +497,8 @@ export default function ProveedorPage() {
                     <span>
                       ⚠️ Tu orden <span className="font-mono">{idOc}</span> ya tiene registrada la factura{" "}
                       <span className="font-mono">{ocActual.citaFactura.folioFactura}</span> en Andén #
-                      {ocActual.citaFactura.anden}.
+                      {ocActual.citaFactura.anden}. Para emitir otra OC usa el Portal de Órdenes.
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setVistaActiva("SIMULADOR_OC")}
-                      className="bg-slate-900 text-white px-2.5 py-1 rounded text-[11px] font-extrabold"
-                    >
-                      Simular Nueva OC →
-                    </button>
                   </div>
                 ) : (
                   <p className="text-xs text-emerald-700 font-semibold">
@@ -746,12 +697,7 @@ export default function ProveedorPage() {
                         >
                           Ver estado de bultos
                         </button>
-                        <Link
-                          href="/handheld"
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg"
-                        >
-                          Recibir en Handheld →
-                        </Link>
+
                       </div>
                     </div>
                   </div>

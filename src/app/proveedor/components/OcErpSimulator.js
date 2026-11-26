@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 
 export default function OcErpSimulator({
   proveedorActivo,
+  proveedoresDisponibles = [],
+  onProveedorChange,
   productosProveedor = [],
   ordenesCompra = [],
   sucursales = [],
@@ -135,14 +137,30 @@ export default function OcErpSimulator({
 
           <div className="md:col-span-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
             <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
-              Proveedor de Papelería Adjudicado (idProveedor #{proveedorActivo?.idProveedor})
+              {onProveedorChange
+                ? "Proveedor de Papelería (selecciona uno de los registrados)"
+                : `Proveedor de Papelería Adjudicado (idProveedor #${proveedorActivo?.idProveedor})`}
             </label>
-            <input
-              type="text"
-              readOnly
-              value={`${proveedorActivo?.nombre} (${proveedorActivo?.correo})`}
-              className="w-full bg-slate-200/80 border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 cursor-not-allowed select-none"
-            />
+            {onProveedorChange && proveedoresDisponibles.length > 0 ? (
+              <select
+                value={proveedorActivo?.idProveedor ?? ""}
+                onChange={(e) => onProveedorChange(Number(e.target.value))}
+                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {proveedoresDisponibles.map((p) => (
+                  <option key={p.idProveedor} value={p.idProveedor}>
+                    #{p.idProveedor} · {p.nombre} ({p.correo})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                readOnly
+                value={`${proveedorActivo?.nombre} (${proveedorActivo?.correo})`}
+                className="w-full bg-slate-200/80 border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 cursor-not-allowed select-none"
+              />
+            )}
           </div>
         </div>
 

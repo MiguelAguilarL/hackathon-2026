@@ -69,21 +69,21 @@ export default function HomePage() {
         </Link>
 
         <Link
-          href="/handheld"
+          href="/ordenes"
           className="group bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-emerald-500 transition flex flex-col justify-between"
         >
           <div>
             <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded">
-              DEV 2 · Momento 3
+              DEV 2 · Órdenes
             </span>
             <h2 className="text-xl font-bold mt-3 group-hover:text-emerald-600 transition">
-              Terminal Portátil Handheld (Recibo en Andén)
+              Órdenes · Simulador de OC con Catálogo
             </h2>
             <p className="text-sm text-slate-600 mt-2">
-              Escaneo de códigos QR de bultos al descargar. Cero tolerancia a discrepancias (rechazo inmediato de SKU no solicitado o excedente), asignación a Rack y reporte de faltantes.
+              Emisión de Órdenes de Compra usando el catálogo de productos del proveedor, con cálculo automático de peso y volumen por partida y folio consecutivo oficial.
             </p>
           </div>
-          <span className="mt-4 text-sm font-semibold text-emerald-600">Ir a /handheld →</span>
+          <span className="mt-4 text-sm font-semibold text-emerald-600">Ir a /ordenes →</span>
         </Link>
 
         <Link
