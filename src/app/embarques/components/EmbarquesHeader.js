@@ -6,15 +6,7 @@ export default function EmbarquesHeader({ tab, onTabChange }) {
 
   return (
     <header className="space-y-4">
-      <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          CEDIS · Momento 4
-        </p>
-        <h1 className="text-2xl font-bold text-slate-900">Racks y Embarques</h1>
-        <p className="text-sm text-slate-600">
-          Misma mercancía (QR de bulto): primero acomodas en el rack y luego consolidas la salida del Tortón.
-        </p>
-      </div>
+      <h1 className="text-2xl font-bold text-slate-900">Racks y Embarques</h1>
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Secciones de embarques">
         {tabs.map((t) => {

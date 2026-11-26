@@ -3,26 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TARIMA_PESO_MAX_KG, TARIMA_VOLUMEN_UTIL_M3 } from "../rackRules";
 import { evaluarAcomodoEnSlot, sugerirTarimaEnRack } from "../rackCapacity";
+import { interpretarEntradaBulto } from "../bultoQr";
+
+export { interpretarEntradaBulto };
 
 function sumar(bultos, campo) {
   return bultos.reduce((acc, b) => acc + (Number(b[campo]) || 0), 0);
-}
-
-/** Interpreta el QR (JSON de etiqueta) o el idBulto en texto plano. */
-export function interpretarEntradaBulto(texto) {
-  const raw = String(texto || "").trim();
-  if (!raw) return { tipo: "vacio" };
-
-  try {
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj === "object" && obj.idBulto) {
-      return { tipo: "idBulto", idBulto: String(obj.idBulto).trim() };
-    }
-  } catch {
-    // texto plano = id del bulto
-  }
-
-  return { tipo: "idBulto", idBulto: raw };
 }
 
 function BarraUso({ pct, ok }) {
@@ -51,7 +37,14 @@ export default function TarimaPanel({
   onAcomodar,
   ocupado = false,
   onCerrar,
+  /** Título de la posición (ej. "Tarima T3 del Tortón"). */
+  etiquetaPosicion,
+  /** Si false, no sugiere otras celdas de rack. */
+  permitirSugerencia = true,
 }) {
+  const titulo =
+    etiquetaPosicion ||
+    (nivel != null ? `Tarima N${nivel}-C${columna}` : `Tarima T${columna}`);
   const [modoScan, setModoScan] = useState(false);
   const [qrPegado, setQrPegado] = useState("");
   const [bulto, setBulto] = useState(null);
@@ -89,12 +82,12 @@ export default function TarimaPanel({
   }, [bulto, bultosEnSlot]);
 
   const sugerenciaTarima = useMemo(() => {
-    if (!bulto || evaluacion?.ok) return null;
+    if (!permitirSugerencia || !bulto || evaluacion?.ok) return null;
     return sugerirTarimaEnRack({
       bultosAAcomodar: [bulto],
       bultosEnRack,
     });
-  }, [bulto, evaluacion, bultosEnRack]);
+  }, [permitirSugerencia, bulto, evaluacion, bultosEnRack]);
 
   const yaEstaEnEstaTarima =
     bulto &&
@@ -265,7 +258,7 @@ export default function TarimaPanel({
       setQrPegado("");
       setMensaje({
         tipo: "ok",
-        texto: result.mensaje || `Bulto acomodado en N${nivel}-C${columna}.`,
+        texto: result.mensaje || `Bulto acomodado en ${titulo}.`,
       });
     } else {
       setMensaje({
@@ -279,9 +272,7 @@ export default function TarimaPanel({
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4 text-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="font-bold text-slate-800">
-            Tarima N{nivel}-C{columna}
-          </p>
+          <p className="font-bold text-slate-800">{titulo}</p>
           <p className="text-xs text-slate-500 mt-0.5">
             {bultosEnSlot.length === 0
               ? "Sin bultos aún"

@@ -13,11 +13,16 @@ export default function TarimaSlot({
   bultos = [],
   seleccionado,
   onSelect,
+  /** Etiqueta visible (ej. T3 en Tortón). Por defecto N?-C?. */
+  etiqueta,
 }) {
   const peso = bultos.reduce((acc, b) => acc + (b.pesoKg || 0), 0);
   const volumen = bultos.reduce((acc, b) => acc + (b.volumenM3 || 0), 0);
   const ocupada = bultos.length > 0;
   const pctPeso = Math.min(100, (peso / TARIMA_PESO_MAX_KG) * 100);
+  const label =
+    etiqueta ||
+    (nivel != null ? `N${nivel}-C${columna}` : `T${columna}`);
 
   let fondo = "bg-white hover:bg-slate-50";
   if (ocupada && pctPeso >= 90) fondo = "bg-emerald-50 hover:bg-emerald-100/80";
@@ -26,16 +31,14 @@ export default function TarimaSlot({
   return (
     <button
       type="button"
-      onClick={() => onSelect?.({ nivel, columna, zona, bultos })}
-      title={`N${nivel}-C${columna}${ocupada ? ` · ${bultos.length} bulto(s)` : " · vacía"}`}
+      onClick={() => onSelect?.({ nivel, columna, zona, bultos, etiqueta: label })}
+      title={`${label}${ocupada ? ` · ${bultos.length} bulto(s)` : " · vacía"}`}
       className={`relative min-h-[4.5rem] rounded-md border border-slate-200 border-l-4 p-1.5 text-left transition ${ZONA_BORDE[zona] || "border-l-slate-300"} ${fondo} ${
         seleccionado ? "ring-2 ring-blue-600 ring-offset-1" : ""
       }`}
     >
       <div className="flex items-center justify-between gap-1">
-        <span className="font-mono text-[10px] font-bold text-slate-700">
-          N{nivel}-C{columna}
-        </span>
+        <span className="font-mono text-[10px] font-bold text-slate-700">{label}</span>
       </div>
 
       {ocupada ? (

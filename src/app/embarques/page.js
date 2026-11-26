@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { resumenRack } from "./torton";
+import { useEffect, useMemo, useState } from "react";
+import {
+  resumenRack,
+  resumenTorton,
+  bultosEnRackDeSucursal,
+  bultosEnTortonDeSucursal,
+} from "./torton";
 import { useEmbarques } from "./useEmbarques";
 import { numeroDeRack, etiquetaRack } from "./cedisLayout";
 import EmbarquesHeader from "./components/EmbarquesHeader";
 import CedisPlano from "./components/CedisPlano";
 import RackResumen from "./components/RackResumen";
 import RackVista from "./components/RackVista";
+import TortonLista from "./components/TortonLista";
 import TortonPanel from "./components/TortonPanel";
 import RelacionEmbarque from "./components/RelacionEmbarque";
 
@@ -24,10 +30,14 @@ export default function EmbarquesPage() {
     setAndenSalida,
     despacharTorton,
     despachando,
+    cargarTorton,
+    cargandoTorton,
   } = useEmbarques();
 
   const [tab, setTab] = useState("racks");
   const [rackSeleccionadoNum, setRackSeleccionadoNum] = useState(null);
+  const [tortonSucursalId, setTortonSucursalId] = useState(null);
+  const [andenPorSucursal, setAndenPorSucursal] = useState({});
 
   useEffect(() => {
     if (!data?.sucursales || rackSeleccionadoNum != null) return;
@@ -35,6 +45,54 @@ export default function EmbarquesPage() {
     const num = numeroDeRack(asignada?.rackAsignado);
     if (num) setRackSeleccionadoNum(num);
   }, [data, sucursalActivaId, rackSeleccionadoNum]);
+
+  // Usa sucursales ya existentes (papelería 01, 02, 03…): andén por defecto 1→1, 2→2, 3→3…
+  useEffect(() => {
+    if (!data?.sucursales?.length) return;
+    setAndenPorSucursal((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const s of data.sucursales) {
+        if (next[s.id] == null) {
+          next[s.id] = ((Number(s.id) - 1) % 3) + 1;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [data?.sucursales]);
+
+  const todosLosBultos = data?.bultos || [];
+
+  const tortones = useMemo(() => {
+    if (!data?.sucursales) return [];
+    const mapped = data.sucursales.map((s) => {
+      const bultosDesdeRack = bultosEnRackDeSucursal(todosLosBultos, s.id);
+      const bultosEnTorton = bultosEnTortonDeSucursal(todosLosBultos, s.id);
+      return {
+        ...s,
+        bultosDesdeRack,
+        bultosEnTorton,
+      };
+    });
+
+    const conCarga = mapped.filter(
+      (s) => s.bultosDesdeRack.length > 0 || s.bultosEnTorton.length > 0
+    );
+
+    // Andenes 2 y 3: embarque a sucursales existentes (02, 03…) aunque aún no tengan carga
+    const paraAndenes23 = mapped.filter((s) => s.id === 2 || s.id === 3);
+    const byId = new Map(conCarga.map((s) => [s.id, s]));
+    for (const s of paraAndenes23) {
+      if (!byId.has(s.id)) byId.set(s.id, s);
+    }
+    return Array.from(byId.values()).sort((a, b) => a.id - b.id);
+  }, [data?.sucursales, todosLosBultos]);
+
+  useEffect(() => {
+    if (tab !== "salida" || tortonSucursalId != null) return;
+    if (tortones.length >= 1) setTortonSucursalId(tortones[0].id);
+  }, [tab, tortones, tortonSucursalId]);
 
   if (loading) {
     return (
@@ -69,21 +127,42 @@ export default function EmbarquesPage() {
     ? resumenRack(sucursalInspectada, rules)
     : null;
 
-  const bultosCandidatos = !sucursalInspectada
+  const bultosCandidatosRack = !sucursalInspectada
     ? []
-    : (data.bultos || []).filter(
+    : todosLosBultos.filter(
         (b) =>
           Number(b.sucursalId) === Number(sucursalInspectada.id) &&
           b.estado !== "EMBARCADO" &&
-          b.estado !== "RECHAZADO"
+          b.estado !== "RECHAZADO" &&
+          b.estado !== "EN_TORTON"
       );
 
+  const tortonActivo =
+    tortones.find((t) => t.id === tortonSucursalId) ||
+    sucursales.find((s) => s.id === tortonSucursalId);
+  const bultosEnTorton = tortonActivo
+    ? bultosEnTortonDeSucursal(todosLosBultos, tortonActivo.id)
+    : [];
+  const bultosDesdeRack = tortonActivo
+    ? bultosEnRackDeSucursal(todosLosBultos, tortonActivo.id)
+    : [];
+  const resumenSalida = tortonActivo
+    ? resumenTorton(bultosEnTorton, rules)
+    : null;
+
+  const handleAndenCard = (sucursalId, anden) => {
+    setAndenPorSucursal((prev) => ({ ...prev, [sucursalId]: anden }));
+    if (sucursalId === tortonSucursalId) setAndenSalida(anden);
+  };
+
+  const handleSelectTorton = (sucursalId) => {
+    setTortonSucursalId(sucursalId);
+    setAndenSalida(andenPorSucursal[sucursalId] || ((Number(sucursalId) - 1) % 3) + 1);
+  };
+
   const handleDespachar = () => {
-    if (!sucursalInspectada) return;
-    despacharTorton({
-      sucursalId: sucursalInspectada.id,
-      bultosRack: sucursalInspectada.bultos || [],
-    });
+    if (!tortonActivo) return;
+    despacharTorton({ sucursalId: tortonActivo.id });
   };
 
   return (
@@ -109,7 +188,10 @@ export default function EmbarquesPage() {
               <div className="space-y-4 border-t border-slate-200 pt-6">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-bold text-slate-800">
-                    {etiquetaRack(rackSeleccionadoNum || numeroDeRack(sucursalInspectada.rackAsignado))}{" "}
+                    {etiquetaRack(
+                      rackSeleccionadoNum ||
+                        numeroDeRack(sucursalInspectada.rackAsignado)
+                    )}{" "}
                     · {sucursalInspectada.nombre}
                   </h2>
                   <button
@@ -123,8 +205,8 @@ export default function EmbarquesPage() {
                 <RackResumen sucursal={sucursalInspectada} resumen={resumenInspectada} />
                 <RackVista
                   sucursal={sucursalInspectada}
-                  bultosCandidatos={bultosCandidatos}
-                  todosLosBultos={data.bultos || []}
+                  bultosCandidatos={bultosCandidatosRack}
+                  todosLosBultos={todosLosBultos}
                   sucursales={sucursales}
                   onAcomodar={acomodarBultos}
                   acomodando={acomodando}
@@ -132,38 +214,47 @@ export default function EmbarquesPage() {
               </div>
             ) : (
               <p className="text-sm text-slate-500 text-center py-2">
-                Selecciona un rack en el plano para acomodar bultos (mismo QR que generó el proveedor).
+                Selecciona un rack en el plano para acomodar bultos.
               </p>
             )}
           </div>
         )}
 
-        {tab === "salida" && sucursalInspectada && resumenInspectada && (
+        {tab === "salida" && (
           <div className="space-y-6">
-            <CedisPlano
-              rackAsignado={sucursalAsignada.rackAsignado}
-              rackSeleccionadoNum={
-                rackSeleccionadoNum ?? numeroDeRack(sucursalInspectada.rackAsignado)
-              }
-              onSelectRack={setRackSeleccionadoNum}
-            />
+            {tortones.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-6 rounded-lg border border-dashed border-slate-200">
+                No hay Tortones esperando carga. Primero acomoda bultos en racks
+                (quedan EN_RACK) y vuelve aquí.
+              </p>
+            ) : (
+              <TortonLista
+                tortones={tortones}
+                rules={rules}
+                andenPorSucursal={andenPorSucursal}
+                onAndenChange={handleAndenCard}
+                tortonSeleccionadoId={tortonSucursalId}
+                onSelect={handleSelectTorton}
+              />
+            )}
 
-            <p className="text-xs text-slate-500">
-              El Tortón suma los bultos{" "}
-              <span className="font-semibold text-slate-700">EN_RACK</span> de la
-              sucursal elegida (los mismos que acomodaste con el QR). Candado: ≥90%
-              peso y volumen.
-            </p>
-
-            <TortonPanel
-              sucursal={sucursalInspectada}
-              resumen={resumenInspectada}
-              rules={rules}
-              andenSalida={andenSalida}
-              onAndenChange={setAndenSalida}
-              onDespachar={handleDespachar}
-              despachando={despachando}
-            />
+            {tortonActivo && resumenSalida && (
+              <div className="border-t border-slate-200 pt-6">
+                <TortonPanel
+                  sucursal={tortonActivo}
+                  resumen={resumenSalida}
+                  rules={rules}
+                  bultosEnTorton={bultosEnTorton}
+                  bultosDesdeRack={bultosDesdeRack}
+                  todosLosBultos={todosLosBultos}
+                  sucursales={sucursales}
+                  onCargarSlot={cargarTorton}
+                  onDespachar={handleDespachar}
+                  cargando={cargandoTorton}
+                  despachando={despachando}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

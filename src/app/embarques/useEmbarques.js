@@ -16,6 +16,7 @@ export function useEmbarques() {
   const [andenSalida, setAndenSalida] = useState(1);
   const [despachando, setDespachando] = useState(false);
   const [acomodando, setAcomodando] = useState(false);
+  const [cargandoTorton, setCargandoTorton] = useState(false);
 
   const cargarDatos = useCallback(async () => {
     setError(null);
@@ -50,8 +51,44 @@ export function useEmbarques() {
     cargarDatos();
   }, [cargarDatos]);
 
+  const cargarTorton = useCallback(
+    async ({ sucursalId, idBultos, slot, soloVerificar = false }) => {
+      setError(null);
+      setCargandoTorton(true);
+      try {
+        const res = await fetch("/api/cedis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "CARGAR_TORTON",
+            sucursalId,
+            idBultos,
+            slot,
+            soloVerificar,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          return {
+            ok: false,
+            error: json.motivo || json.error || "No se pudo cargar al Tortón.",
+          };
+        }
+        if (!soloVerificar) {
+          await cargarDatos();
+        }
+        return { ok: true, ...json };
+      } catch (err) {
+        return { ok: false, error: err.message || "Error de red al cargar Tortón." };
+      } finally {
+        setCargandoTorton(false);
+      }
+    },
+    [cargarDatos]
+  );
+
   const despacharTorton = useCallback(
-    async ({ sucursalId, bultosRack }) => {
+    async ({ sucursalId }) => {
       setError(null);
       setDespachando(true);
       try {
@@ -72,10 +109,7 @@ export function useEmbarques() {
         }
 
         await cargarDatos();
-        setEmbarqueEmitido({
-          ...json.embarque,
-          bultos: bultosRack,
-        });
+        setEmbarqueEmitido(json.embarque);
         return true;
       } catch (err) {
         setError(err.message || "Error de red al despachar.");
@@ -134,8 +168,10 @@ export function useEmbarques() {
     setAndenSalida,
     despachando,
     acomodando,
+    cargandoTorton,
     cargarDatos,
     despacharTorton,
+    cargarTorton,
     acomodarBultos,
   };
 }

@@ -20,6 +20,12 @@ import {
   RACKS_LEJOS,
 } from "@/app/embarques/cedisLayout";
 import {
+  evaluarCargaEnTorton,
+  ESTADO_EN_TORTON,
+  ESTADO_EN_RACK,
+  TORTON_TARIMAS,
+} from "@/app/embarques/torton";
+import {
   aMinutos,
   desdeMinutos,
   formatearHora,
@@ -468,16 +474,140 @@ export async function POST(request) {
       });
     }
 
-    // MOMENTO 4: Liberar Embarque en Camión Tortón (Regla del >= 90% en Peso y Volumen)
+    // MOMENTO 4: subir bulto del rack a una tarima (slot 1–12) del Tortón
+    if (action === "CARGAR_TORTON") {
+      const { sucursalId, idBultos, slot, soloVerificar } = body;
+      const ids = Array.isArray(idBultos) ? idBultos : [];
+      const slotN = Number(slot);
+
+      if (!sucursalId || ids.length === 0) {
+        return NextResponse.json(
+          { error: "Faltan sucursalId o idBultos para cargar al Tortón." },
+          { status: 400 }
+        );
+      }
+      if (!Number.isInteger(slotN) || slotN < 1 || slotN > TORTON_TARIMAS) {
+        return NextResponse.json(
+          { error: `Slot inválido. El Tortón tiene tarimas T1–T${TORTON_TARIMAS}.` },
+          { status: 400 }
+        );
+      }
+
+      const bultosACargar = await prisma.bulto.findMany({
+        where: { idBulto: { in: ids } },
+      });
+
+      if (bultosACargar.length !== ids.length) {
+        return NextResponse.json(
+          { error: "Uno o más bultos no existen en la base de datos." },
+          { status: 404 }
+        );
+      }
+
+      const deOtra = bultosACargar.find((b) => b.sucursalId !== Number(sucursalId));
+      if (deOtra) {
+        return NextResponse.json(
+          { error: `El bulto ${deOtra.idBulto} pertenece a otra sucursal/rack.` },
+          { status: 400 }
+        );
+      }
+
+      const noEnRack = bultosACargar.find((b) => b.estado !== ESTADO_EN_RACK);
+      if (noEnRack) {
+        return NextResponse.json(
+          {
+            error: `El bulto ${noEnRack.idBulto} debe estar EN_RACK (en una tarima de rack) para subirlo al Tortón. Estado actual: ${noEnRack.estado}.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const bultosYaEnSlot = await prisma.bulto.findMany({
+        where: {
+          sucursalId: Number(sucursalId),
+          estado: ESTADO_EN_TORTON,
+          columna: slotN,
+          idBulto: { notIn: ids },
+        },
+      });
+
+      const evSlot = evaluarAcomodoEnSlot({
+        bultosAAcomodar: bultosACargar,
+        bultosYaEnSlot,
+      });
+      if (!evSlot.ok) {
+        return NextResponse.json(
+          { ok: false, cabe: false, motivo: `Tarima T${slotN}: ${evSlot.motivo}` },
+          { status: 400 }
+        );
+      }
+
+      const bultosYaEnTorton = await prisma.bulto.findMany({
+        where: {
+          sucursalId: Number(sucursalId),
+          estado: ESTADO_EN_TORTON,
+          idBulto: { notIn: ids },
+        },
+      });
+
+      const evCamion = evaluarCargaEnTorton({
+        bultosACargar,
+        bultosYaEnTorton,
+        rules: CEDIS_RULES,
+      });
+      if (!evCamion.ok) {
+        return NextResponse.json(
+          { ok: false, cabe: false, motivo: evCamion.motivo },
+          { status: 400 }
+        );
+      }
+
+      if (soloVerificar) {
+        return NextResponse.json({
+          ok: true,
+          cabe: true,
+          slot: slotN,
+          resumen: evSlot.resumen,
+          mensaje: `Cabe en tarima T${slotN} del Tortón.`,
+        });
+      }
+
+      // Sale del rack: estado EN_TORTON; columna = slot del Tortón; nivel null
+      await prisma.bulto.updateMany({
+        where: { idBulto: { in: ids } },
+        data: {
+          estado: ESTADO_EN_TORTON,
+          nivel: null,
+          columna: slotN,
+          motivoRechazo: null,
+        },
+      });
+
+      const bultosActualizados = await prisma.bulto.findMany({
+        where: { idBulto: { in: ids } },
+        include: { sucursal: true },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        cabe: true,
+        slot: slotN,
+        resumen: evSlot.resumen,
+        bultos: bultosActualizados,
+        mensaje: `Cargados ${bultosActualizados.length} bulto(s) en T${slotN} del Tortón (salieron del rack).`,
+      });
+    }
+
+    // MOMENTO 4: Liberar Embarque (candado ≥90% sobre lo ya cargado EN_TORTON)
     if (action === "DESPACHAR_EMBARQUE") {
       const { sucursalId, andenSalida } = body;
 
-      const bultosEnRack = await prisma.bulto.findMany({
-        where: { sucursalId: Number(sucursalId), estado: "EN_RACK" },
+      const bultosEnTorton = await prisma.bulto.findMany({
+        where: { sucursalId: Number(sucursalId), estado: ESTADO_EN_TORTON },
       });
 
-      const pesoTotalKg = bultosEnRack.reduce((acc, b) => acc + b.pesoKg, 0);
-      const volumenTotalM3 = bultosEnRack.reduce((acc, b) => acc + b.volumenM3, 0);
+      const pesoTotalKg = bultosEnTorton.reduce((acc, b) => acc + b.pesoKg, 0);
+      const volumenTotalM3 = bultosEnTorton.reduce((acc, b) => acc + b.volumenM3, 0);
 
       const porcentajePeso = (pesoTotalKg / CEDIS_RULES.TORTON_MAX_PESO_KG) * 100;
       const porcentajeVolumen = (volumenTotalM3 / CEDIS_RULES.TORTON_MAX_VOLUMEN_M3) * 100;
@@ -507,11 +637,14 @@ export async function POST(request) {
       });
 
       await prisma.bulto.updateMany({
-        where: { sucursalId: Number(sucursalId), estado: "EN_RACK" },
+        where: { sucursalId: Number(sucursalId), estado: ESTADO_EN_TORTON },
         data: { estado: "EMBARCADO", embarqueId: idEmbarque },
       });
 
-      return NextResponse.json({ ok: true, embarque });
+      return NextResponse.json({
+        ok: true,
+        embarque: { ...embarque, bultos: bultosEnTorton },
+      });
     }
 
     return NextResponse.json({ error: "Acción no reconocida" }, { status: 400 });
