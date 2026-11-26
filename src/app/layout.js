@@ -24,10 +24,10 @@ export default function RootLayout({ children }) {
                 1-2. Portal Proveedor (Citas + QR)
               </Link>
               <Link
-                href="/handheld"
+                href="/ordenes"
                 className="px-3 py-1.5 rounded-md bg-emerald-700 hover:bg-emerald-600 transition font-medium"
               >
-                3. Handheld Andén (Escáner QR)
+                3. Órdenes (Simulador OC)
               </Link>
               <Link
                 href="/embarques"

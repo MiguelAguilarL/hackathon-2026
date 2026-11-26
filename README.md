@@ -67,8 +67,8 @@ No uses `npm install` ni `npm run dev`: el proyecto usa **`pnpm` de forma obliga
 ### Rutas
 
 - `/` — panel general.
-- `/proveedor` — portal del proveedor: agendamiento, etiquetas QR y estado actual de bultos. Credenciales de ejemplo en `prisma/seed.mjs` (p. ej. `ventas@papeleranacional.mx` / `Papel2026*`).
-- `/handheld` — terminal de escaneo QR (muestra los 7 campos de la etiqueta, valida contra la OC y permite escanear otro QR).
+- `/proveedor` — portal del proveedor: agendamiento, etiquetas QR y estado actual de bultos. La emisión de OC con catálogo se realiza en `/ordenes`. Credenciales de ejemplo en `prisma/seed.mjs` (p. ej. `ventas@papeleranacional.mx` / `Papel2026*`).
+- `/ordenes` — portal interno de Órdenes (personal de Catlovers) con login corporativo propio y simulador de OC sobre el catálogo del proveedor elegido. Cuentas demo: `compras@catlovers.mx` / `Compras2026*`, `cedis@catlovers.mx` / `Cedis2026*` y `almacen@catlovers.mx` / `Almacen2026*`.
 - `/embarques` — acomodo en racks y control de embarques.
 - `/api/cedis` — API JSON del CEDIS.
 

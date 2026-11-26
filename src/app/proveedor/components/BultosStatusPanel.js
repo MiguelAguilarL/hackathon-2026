@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { formatearHora, formatearDuracion } from "@/lib/horarios";
 import { ESTADOS_BULTO, etiquetaEstado, clasesEstado } from "@/lib/estadosBulto";
 
@@ -156,9 +155,9 @@ export default function BultosStatusPanel({
               Pendiente = esperando escaneo · En rack = recibido y ubicado · Rechazado = discrepancia con la OC ·
               Embarcado = enviado a sucursal.
             </p>
-            <Link href="/handheld" className="font-extrabold text-emerald-700 hover:text-emerald-800">
-              Abrir terminal de escaneo →
-            </Link>
+            <span className="font-semibold text-slate-400">
+              El estado se actualiza al validar cada bulto en el CEDIS.
+            </span>
           </div>
         </div>
       )}
